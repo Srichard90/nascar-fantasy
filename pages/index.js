@@ -2,15 +2,38 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Link from 'next/link'
 
+const S = {
+  card: {
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  th: {
+    padding: '12px 20px',
+    fontFamily: "'Barlow Condensed', sans-serif",
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+    textAlign: 'left',
+    background: 'var(--surface2)',
+    borderBottom: '1px solid var(--border)',
+    whiteSpace: 'nowrap',
+  },
+}
+
+const MEDALS = ['🥇', '🥈', '🥉']
+
 export default function StandingsPage() {
-  const [standings,   setStandings]   = useState([])
-  const [season,      setSeason]      = useState(null)
-  const [recentRace,  setRecentRace]  = useState(null)
-  const [loading,     setLoading]     = useState(true)
+  const [standings, setStandings] = useState([])
+  const [season,    setSeason]    = useState(null)
+  const [lastRace,  setLastRace]  = useState(null)
+  const [loading,   setLoading]   = useState(true)
 
   async function fetchData() {
-    const { data: s } = await supabase
-      .from('seasons').select('*').eq('is_active', true).single()
+    const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
     setSeason(s)
     if (!s) { setLoading(false); return }
 
@@ -29,7 +52,7 @@ export default function StandingsPage() {
       .order('week_number', { ascending: false })
       .limit(1)
       .single()
-    setRecentRace(r)
+    setLastRace(r)
     setLoading(false)
   }
 
@@ -40,82 +63,170 @@ export default function StandingsPage() {
   }, [])
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="text-gray-400 text-lg animate-pulse">Loading standings…</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+      <span style={{ color: 'var(--muted)', fontFamily: "'Barlow Condensed'", fontSize: 18, letterSpacing: '0.1em' }}>
+        LOADING…
+      </span>
     </div>
   )
 
   if (!season) return (
-    <div className="text-center py-24">
-      <div className="text-6xl mb-4">🏁</div>
-      <h2 className="text-2xl font-bold text-gray-300 mb-2">No active season</h2>
-      <p className="text-gray-500 mb-6">Set up your league in the Admin panel first.</p>
-      <Link href="/admin" className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-2 rounded-lg transition">
-        Go to Admin
-      </Link>
+    <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+      <div style={{ fontSize: 64, marginBottom: 16 }}>🏁</div>
+      <h2 style={{ fontSize: 36, color: 'var(--text)', marginBottom: 8 }}>No Active Season</h2>
+      <p style={{ color: 'var(--muted)', marginBottom: 28 }}>Head to the Admin panel to create your league.</p>
+      <Link href="/admin" style={{
+        textDecoration: 'none',
+        background: 'var(--red)',
+        color: '#fff',
+        padding: '12px 28px',
+        borderRadius: 8,
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        fontSize: 15,
+      }}>Go to Admin</Link>
     </div>
   )
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold text-yellow-400 tracking-wide">{season.season_name}</h1>
-        <p className="text-gray-400 mt-1 text-sm">
-          Season Standings &mdash; <span className="text-green-400">Lower points = better position</span>
-          {recentRace && <span className="ml-2 text-gray-500">· Last race: {recentRace.race_name}</span>}
+    <div className="fade-up">
+      {/* Page header */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: 52, color: 'var(--text)', margin: 0 }}>{season.season_name}</h1>
+          {lastRace && (
+            <span style={{
+              background: 'var(--surface2)',
+              border: '1px solid var(--border2)',
+              borderRadius: 6,
+              padding: '3px 12px',
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: 13,
+              color: 'var(--muted)',
+              letterSpacing: '0.05em',
+            }}>
+              Last: {lastRace.race_name}
+            </span>
+          )}
+        </div>
+        <p style={{ color: 'var(--muted)', marginTop: 6, fontSize: 14 }}>
+          Season standings &nbsp;·&nbsp;
+          <span style={{ color: 'var(--green)' }}>Lower points = better rank</span>
+          &nbsp;·&nbsp; Updates every 30 seconds
         </p>
       </div>
 
+      {/* Standings table */}
       {standings.length === 0 ? (
-        <div className="bg-gray-800 rounded-xl p-10 text-center border border-gray-700">
-          <div className="text-4xl mb-3">📋</div>
-          <p className="text-gray-400 text-lg">Standings will appear here after the first race results are entered.</p>
+        <div style={{ ...S.card, padding: '60px 40px', textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+          <p style={{ color: 'var(--muted)', fontSize: 17 }}>
+            Standings appear here after the first race results are entered.
+          </p>
         </div>
       ) : (
-        <div className="bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 mb-8">
-          <table className="w-full">
+        <div style={{ ...S.card, marginBottom: 40 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr className="bg-red-700">
-                <th className="px-5 py-3 text-left text-sm font-semibold uppercase tracking-wider">Rank</th>
-                <th className="px-5 py-3 text-left text-sm font-semibold uppercase tracking-wider">Player</th>
-                <th className="px-5 py-3 text-center text-sm font-semibold uppercase tracking-wider">Total Pts</th>
-                <th className="px-5 py-3 text-center text-sm font-semibold uppercase tracking-wider hidden sm:table-cell">Weeks</th>
-                <th className="px-5 py-3 text-center text-sm font-semibold uppercase tracking-wider hidden sm:table-cell">Best Week</th>
-                <th className="px-5 py-3 text-center text-sm font-semibold uppercase tracking-wider hidden sm:table-cell">Avg/Wk</th>
+              <tr>
+                <th style={{ ...S.th, width: 60 }}>Rank</th>
+                <th style={{ ...S.th }}>Player</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Total Pts</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Races</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Best Wk</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Avg / Wk</th>
               </tr>
             </thead>
             <tbody>
-              {standings.map((row, i) => (
-                <tr key={row.standing_id}
-                  className={`border-t border-gray-700 transition-colors ${i === 0 ? 'bg-yellow-900/30' : 'hover:bg-gray-700/40'}`}>
-                  <td className="px-5 py-4 font-bold text-xl">
-                    {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
-                  </td>
-                  <td className="px-5 py-4 font-semibold text-white">{row.players?.player_name}</td>
-                  <td className="px-5 py-4 text-center font-mono text-xl font-bold text-yellow-400">{row.total_points}</td>
-                  <td className="px-5 py-4 text-center text-gray-300 hidden sm:table-cell">{row.weeks_scored}</td>
-                  <td className="px-5 py-4 text-center text-green-400 font-semibold hidden sm:table-cell">{row.best_week ?? '—'}</td>
-                  <td className="px-5 py-4 text-center text-gray-300 hidden sm:table-cell">
-                    {row.weeks_scored > 0 ? (row.total_points / row.weeks_scored).toFixed(1) : '—'}
-                  </td>
-                </tr>
-              ))}
+              {standings.map((row, i) => {
+                const isFirst = i === 0
+                return (
+                  <tr key={row.standing_id} style={{
+                    borderTop: '1px solid var(--border)',
+                    background: isFirst ? 'rgba(245,197,24,0.06)' : 'transparent',
+                    transition: 'background 0.15s',
+                  }}>
+                    <td style={{ padding: '16px 20px', fontSize: 22 }}>
+                      {MEDALS[i] || <span style={{
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontWeight: 700,
+                        color: 'var(--dim)',
+                        fontSize: 16,
+                      }}>#{i + 1}</span>}
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <span style={{
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontWeight: 700,
+                        fontSize: 20,
+                        color: isFirst ? 'var(--gold)' : 'var(--text)',
+                        letterSpacing: '0.02em',
+                      }}>
+                        {row.players?.player_name}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+                      <span style={{
+                        fontFamily: "'Bebas Neue', sans-serif",
+                        fontSize: 28,
+                        color: isFirst ? 'var(--gold)' : 'var(--text)',
+                        letterSpacing: '0.05em',
+                      }}>
+                        {row.total_points}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 15 }}>
+                      {row.weeks_scored}
+                    </td>
+                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+                      <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: 15 }}>
+                        {row.best_week ?? '—'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 15 }}>
+                      {row.weeks_scored > 0
+                        ? (row.total_points / row.weeks_scored).toFixed(1)
+                        : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Quick links */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
         {[
-          { href: '/draft',   icon: '🚗', title: 'Draft Room',     desc: 'Live snake draft — pick your drivers'  },
-          { href: '/results', icon: '📊', title: 'Weekly Results', desc: 'See driver scores by race week'         },
-          { href: '/admin',   icon: '⚙️', title: 'Admin Panel',    desc: 'Enter races and finish positions'       },
+          { href: '/draft',   icon: '🚗', title: 'Draft Room',     desc: 'Live snake draft'          },
+          { href: '/results', icon: '📊', title: 'Weekly Results', desc: 'Driver scores by race week' },
+          { href: '/admin',   icon: '⚙️', title: 'Admin Panel',    desc: 'Manage races & results'    },
         ].map(card => (
-          <Link key={card.href} href={card.href}
-            className="bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-red-600 rounded-xl p-5 text-center transition-all group">
-            <div className="text-3xl mb-2">{card.icon}</div>
-            <div className="font-bold text-yellow-400 group-hover:text-yellow-300 mb-1">{card.title}</div>
-            <div className="text-gray-500 text-sm">{card.desc}</div>
+          <Link key={card.href} href={card.href} style={{
+            textDecoration: 'none',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 14,
+            padding: '24px 20px',
+            textAlign: 'center',
+            transition: 'border-color 0.15s, transform 0.15s',
+            display: 'block',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--red)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)' }}
+          >
+            <div style={{ fontSize: 32, marginBottom: 10 }}>{card.icon}</div>
+            <div style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 22,
+              color: 'var(--text)',
+              letterSpacing: '0.06em',
+              marginBottom: 4,
+            }}>{card.title}</div>
+            <div style={{ color: 'var(--muted)', fontSize: 13 }}>{card.desc}</div>
           </Link>
         ))}
       </div>
