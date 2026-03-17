@@ -1,10 +1,56 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-/* ── Password gate ─────────────────────────────────────────── */
+// ── Shared input style (prevents off-screen shift) ─────────────
+const inp = {
+  display: 'block',
+  width: '100%',
+  boxSizing: 'border-box',
+  background: 'var(--bg)',
+  border: '1px solid var(--border2)',
+  borderRadius: 8,
+  padding: '10px 14px',
+  color: 'var(--text)',
+  fontSize: 14,
+  fontFamily: "'Barlow', sans-serif",
+  outline: 'none',
+}
+
+const btn = (variant='red') => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+  padding: '10px 22px',
+  borderRadius: 8,
+  border: 'none',
+  fontFamily: "'Barlow Condensed', sans-serif",
+  fontWeight: 700,
+  fontSize: 14,
+  letterSpacing: '0.07em',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
+  background: variant==='red' ? 'var(--red)' : variant==='green' ? 'var(--green)' : variant==='gold' ? 'var(--gold)' : 'var(--surface2)',
+  color: variant==='green'||variant==='gold' ? '#000' : '#fff',
+  border: variant==='ghost' ? '1px solid var(--border2)' : 'none',
+  transition: 'opacity 0.15s',
+})
+
+const lbl = {
+  display: 'block',
+  fontFamily: "'Barlow Condensed', sans-serif",
+  fontSize: 12,
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--muted)',
+  marginBottom: 6,
+}
+
+// ── Password gate ──────────────────────────────────────────────
 function PasswordGate({ onUnlock }) {
-  const [pwd, setPwd] = useState('')
-  const [err, setErr] = useState('')
+  const [pwd,  setPwd]  = useState('')
+  const [err,  setErr]  = useState('')
   const [busy, setBusy] = useState(false)
 
   async function submit(e) {
@@ -16,25 +62,41 @@ function PasswordGate({ onUnlock }) {
       body: JSON.stringify({ password: pwd }),
     })
     setBusy(false)
-    if (res.ok) { sessionStorage.setItem('nascar_admin', '1'); onUnlock() }
-    else setErr('Incorrect password.')
+    if (res.ok) { sessionStorage.setItem('nascar_admin','1'); onUnlock() }
+    else setErr('Incorrect password — check your Vercel env variable ADMIN_PASSWORD.')
   }
 
   return (
-    <div className="flex items-center justify-center py-24">
-      <div className="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
-        <div className="text-center mb-6">
-          <div className="text-4xl mb-2">🔒</div>
-          <h2 className="text-xl font-bold text-white">Admin Access</h2>
-          <p className="text-gray-400 text-sm mt-1">Enter the admin password</p>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh' }}>
+      <div style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 18,
+        padding: '40px 36px',
+        width: '100%',
+        maxWidth: 400,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+      }}>
+        <div style={{ textAlign:'center', marginBottom:28 }}>
+          <div style={{ fontSize:42, marginBottom:10 }}>🔒</div>
+          <h2 style={{ fontSize:32, color:'var(--text)', margin:0 }}>Admin Access</h2>
+          <p style={{ color:'var(--muted)', fontSize:14, marginTop:6 }}>Enter your admin password</p>
         </div>
-        <form onSubmit={submit} className="space-y-4">
-          <input type="password" placeholder="Password" value={pwd} onChange={e => setPwd(e.target.value)}
-            className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-red-500" />
-          {err && <p className="text-red-400 text-sm">{err}</p>}
-          <button type="submit" disabled={busy || !pwd}
-            className="w-full bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white font-semibold py-2.5 rounded-lg transition">
-            {busy ? 'Checking…' : 'Unlock'}
+        <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div>
+            <label style={lbl}>Password</label>
+            <input
+              type="password"
+              value={pwd}
+              onChange={e => setPwd(e.target.value)}
+              placeholder="••••••••"
+              style={inp}
+              autoFocus
+            />
+          </div>
+          {err && <div style={{ background:'rgba(232,25,44,0.12)', border:'1px solid rgba(232,25,44,0.3)', color:'#ff6b7a', borderRadius:7, padding:'10px 14px', fontSize:13 }}>{err}</div>}
+          <button type="submit" disabled={busy||!pwd} style={{ ...btn('red'), width:'100%', padding:'12px', opacity: busy||!pwd ? 0.4 : 1 }}>
+            {busy ? 'Checking…' : 'Unlock Admin'}
           </button>
         </form>
       </div>
@@ -42,19 +104,48 @@ function PasswordGate({ onUnlock }) {
   )
 }
 
-/* ── Tab button ────────────────────────────────────────────── */
-function Tab({ active, onClick, children }) {
+// ── Tab button ─────────────────────────────────────────────────
+function Tab({ label, active, onClick }) {
   return (
-    <button onClick={onClick}
-      className={`px-5 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
-        active ? 'bg-gray-800 border-red-500 text-white' : 'bg-gray-900 border-transparent text-gray-400 hover:text-white'
-      }`}>
-      {children}
+    <button onClick={onClick} style={{
+      padding: '10px 22px',
+      background: active ? 'var(--surface)' : 'transparent',
+      border: 'none',
+      borderBottom: active ? '2px solid var(--red)' : '2px solid transparent',
+      color: active ? 'var(--text)' : 'var(--muted)',
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontWeight: 700,
+      fontSize: 14,
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      cursor: 'pointer',
+      transition: 'all 0.15s',
+      whiteSpace: 'nowrap',
+    }}>
+      {label}
     </button>
   )
 }
 
-/* ── Admin panel ───────────────────────────────────────────── */
+// ── Flash banner ───────────────────────────────────────────────
+function Flash({ msg, err }) {
+  if (!msg && !err) return null
+  return (
+    <div style={{
+      background: err ? 'rgba(232,25,44,0.12)' : 'rgba(34,197,94,0.1)',
+      border: `1px solid ${err ? 'rgba(232,25,44,0.35)' : 'rgba(34,197,94,0.35)'}`,
+      color: err ? '#ff6b7a' : '#4ade80',
+      borderRadius: 8,
+      padding: '12px 16px',
+      fontSize: 14,
+      marginBottom: 20,
+    }}>
+      {err ? '⚠️ ' : '✅ '}{msg || err}
+    </div>
+  )
+}
+
+// ── Main panel ─────────────────────────────────────────────────
 function AdminPanel() {
   const [tab,     setTab]     = useState('setup')
   const [season,  setSeason]  = useState(null)
@@ -63,159 +154,202 @@ function AdminPanel() {
   const [races,   setRaces]   = useState([])
   const [drivers, setDrivers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [msg,     setMsg]     = useState('')
+  const [ok,      setOk]      = useState('')
+  const [fail,    setFail]    = useState('')
 
-  async function load() {
-    const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
+  async function loadAll() {
+    const { data: s } = await supabase.from('seasons').select('*').eq('is_active',true).single()
     setSeason(s)
     if (s) {
-      const { data: pl }   = await supabase.from('players').select('*').eq('season_id', s.season_id).order('draft_position')
-      const { data: sess } = await supabase.from('draft_sessions').select('*').eq('season_id', s.season_id).single()
-      const { data: r }    = await supabase.from('races').select('*').eq('season_id', s.season_id).order('week_number')
-      setPlayers(pl || []); setSession(sess); setRaces(r || [])
+      const { data: pl }   = await supabase.from('players').select('*').eq('season_id',s.season_id).order('draft_position')
+      const { data: sess } = await supabase.from('draft_sessions').select('*').eq('season_id',s.season_id).single()
+      const { data: r }    = await supabase.from('races').select('*').eq('season_id',s.season_id).order('week_number')
+      setPlayers(pl||[]); setSession(sess); setRaces(r||[])
     }
-    const { data: drv } = await supabase.from('drivers').select('*').eq('is_active', true).order('driver_name')
-    setDrivers(drv || [])
+    const { data: drv } = await supabase.from('drivers').select('*').eq('is_active',true).order('driver_name')
+    setDrivers(drv||[])
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { loadAll() }, [])
 
-  function flash(t) { setMsg(t); setTimeout(() => setMsg(''), 4000) }
+  function flash(msg) { setOk(msg); setFail(''); setTimeout(()=>setOk(''), 5000) }
+  function boom(msg)  { setFail(msg); setOk(''); setTimeout(()=>setFail(''), 8000) }
 
-  if (loading) return <div className="text-center py-12 text-gray-400 animate-pulse">Loading…</div>
+  if (loading) return (
+    <div style={{ textAlign:'center', padding:'48px', color:'var(--muted)', fontFamily:"'Barlow Condensed'", letterSpacing:'0.1em' }}>LOADING…</div>
+  )
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-extrabold text-yellow-400">Admin Panel</h1>
-        {season && <p className="text-gray-400 text-sm mt-1">{season.season_name}</p>}
+    <div className="fade-up">
+      <div style={{ marginBottom:24 }}>
+        <h1 style={{ fontSize:48, color:'var(--text)', margin:0 }}>Admin Panel</h1>
+        {season && <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season.season_name}</p>}
       </div>
-      {msg && <div className="bg-green-900/40 border border-green-600 text-green-300 rounded-lg px-4 py-3 mb-4 text-sm">✅ {msg}</div>}
 
-      <div className="flex gap-1 mb-0 border-b border-gray-700">
-        <Tab active={tab==='setup'}   onClick={() => setTab('setup')}>⚙️ Setup</Tab>
-        <Tab active={tab==='races'}   onClick={() => setTab('races')}>🏎️ Races</Tab>
-        <Tab active={tab==='results'} onClick={() => setTab('results')}>📋 Results</Tab>
+      <Flash msg={ok} err={fail} />
+
+      {/* Tabs */}
+      <div style={{ display:'flex', borderBottom:'1px solid var(--border)', marginBottom:0, overflowX:'auto' }}>
+        <Tab label="⚙️ Setup"    active={tab==='setup'}   onClick={()=>setTab('setup')} />
+        <Tab label="🏎️ Races"   active={tab==='races'}   onClick={()=>setTab('races')} />
+        <Tab label="📋 Results" active={tab==='results'} onClick={()=>setTab('results')} />
       </div>
-      <div className="bg-gray-800 border border-gray-700 border-t-0 rounded-b-xl rounded-tr-xl p-6">
-        {tab === 'setup'   && <SetupTab   season={season} players={players} session={session} reload={load} flash={flash} />}
-        {tab === 'races'   && <RacesTab   season={season} races={races} reload={load} flash={flash} />}
-        {tab === 'results' && <ResultsTab season={season} races={races} drivers={drivers} session={session} reload={load} flash={flash} />}
+
+      <div style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderTop: 'none',
+        borderRadius: '0 0 14px 14px',
+        padding: '28px 28px',
+      }}>
+        {tab==='setup'   && <SetupTab   season={season} players={players} session={session} reload={loadAll} flash={flash} boom={boom} />}
+        {tab==='races'   && <RacesTab   season={season} races={races}     reload={loadAll} flash={flash} boom={boom} />}
+        {tab==='results' && <ResultsTab season={season} races={races} drivers={drivers} session={session} reload={loadAll} flash={flash} boom={boom} />}
       </div>
     </div>
   )
 }
 
-/* ── SETUP TAB ─────────────────────────────────────────────── */
-function SetupTab({ season, players, session, reload, flash }) {
-  const [yearVal, setYearVal] = useState(new Date().getFullYear())
-  const [nameVal, setNameVal] = useState('')
-  const [pName,   setPName]   = useState('')
-  const [pPos,    setPPos]    = useState('')
-  const [busy,    setBusy]    = useState(false)
-  const [err,     setErr]     = useState('')
+// ── SETUP TAB ──────────────────────────────────────────────────
+function SetupTab({ season, players, session, reload, flash, boom }) {
+  const [year,  setYear]  = useState(new Date().getFullYear())
+  const [name,  setName]  = useState('')
+  const [pName, setPName] = useState('')
+  const [pPos,  setPPos]  = useState('')
+  const [busy,  setBusy]  = useState(false)
 
   async function createSeason() {
-    setBusy(true); setErr('')
-    await supabase.from('seasons').update({ is_active: false }).eq('is_active', true)
-    const { error } = await supabase.from('seasons').insert({ season_year: yearVal, season_name: nameVal, is_active: true })
+    setBusy(true)
+    await supabase.from('seasons').update({is_active:false}).eq('is_active',true)
+    const { error } = await supabase.from('seasons').insert({ season_year:year, season_name:name, is_active:true })
     setBusy(false)
-    if (error) { setErr(error.message); return }
-    flash('Season created!'); reload()
+    if (error) { boom(error.message); return }
+    flash('Season created!')
+    reload()
   }
 
   async function addPlayer() {
-    setBusy(true); setErr('')
-    const { error } = await supabase.from('players').insert({
-      season_id: season.season_id, player_name: pName, draft_position: parseInt(pPos, 10),
-    })
+    setBusy(true)
+    const { error } = await supabase.from('players').insert({ season_id:season.season_id, player_name:pName, draft_position:parseInt(pPos,10) })
     setBusy(false)
-    if (error) { setErr(error.message); return }
-    setPName(''); setPPos(''); flash(`Player "${pName}" added!`); reload()
+    if (error) { boom(error.message); return }
+    setPName(''); setPPos('')
+    flash(`Player "${pName}" added!`)
+    reload()
   }
 
   async function removePlayer(id) {
-    await supabase.from('players').delete().eq('player_id', id)
-    flash('Player removed.'); reload()
+    await supabase.from('players').delete().eq('player_id',id)
+    flash('Player removed.')
+    reload()
   }
 
   async function startDraft() {
-    setBusy(true); setErr('')
+    setBusy(true)
     const { data, error } = await supabase.rpc('start_draft_session')
     setBusy(false)
-    if (error || !data?.success) { setErr(data?.error || error?.message); return }
-    flash(`Draft started! ${data.total_rounds} rounds, ${data.total_players} players.`); reload()
+    if (error || !data?.success) { boom(data?.error || error?.message); return }
+    flash(`Draft started! ${data.total_rounds} rounds for ${data.total_players} players.`)
+    reload()
   }
 
   const canStart = players.length >= 2 && 20 % players.length === 0 && !session
 
   return (
-    <div className="space-y-8 max-w-lg">
-      {err && <p className="text-red-400 text-sm bg-red-900/30 border border-red-700 rounded px-3 py-2">{err}</p>}
+    <div style={{ maxWidth: 520, display:'flex', flexDirection:'column', gap:32 }}>
 
+      {/* 1. Season */}
       <section>
-        <h3 className="text-lg font-bold text-white mb-3">1. Season</h3>
+        <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 14px' }}>1 — Season</h3>
         {season ? (
-          <div className="bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-sm">
-            <span className="text-green-400 font-semibold">✓ Active: </span>
-            <span className="text-white">{season.season_name} ({season.season_year})</span>
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', fontSize:14 }}>
+            <span style={{ color:'var(--green)', fontWeight:600 }}>✓ Active: </span>
+            <span style={{ color:'var(--text)' }}>{season.season_name} ({season.season_year})</span>
           </div>
         ) : (
-          <div className="space-y-3">
-            <input type="number" placeholder="Year (e.g. 2025)" value={yearVal} onChange={e => setYearVal(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
-            <input type="text" placeholder="Season name (e.g. 2025 Cup Fantasy)" value={nameVal} onChange={e => setNameVal(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
-            <button onClick={createSeason} disabled={busy || !nameVal}
-              className="bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white text-sm font-semibold px-5 py-2 rounded-lg transition">
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div>
+              <label style={lbl}>Year</label>
+              <input type="number" value={year} onChange={e=>setYear(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Season Name</label>
+              <input type="text" value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. 2025 Cup Series Fantasy" style={inp} />
+            </div>
+            <button onClick={createSeason} disabled={busy||!name} style={{ ...btn('red'), opacity: busy||!name ? 0.4 : 1 }}>
               Create Season
             </button>
           </div>
         )}
       </section>
 
+      {/* 2. Players */}
       {season && (
         <section>
-          <h3 className="text-lg font-bold text-white mb-1">2. Players</h3>
-          <p className="text-gray-500 text-xs mb-3">Use 4 players (5 rounds each) or 5 players (4 rounds each). Number slots starting at 1.</p>
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 4px' }}>2 — Players</h3>
+          <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 14px' }}>
+            Use 4 players (5 rounds) or 5 players (4 rounds). Slot numbers must be 1, 2, 3…
+          </p>
+
           {players.length > 0 && (
-            <div className="space-y-1.5 mb-3">
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
               {players.map(p => (
-                <div key={p.player_id} className="flex items-center justify-between bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-                  <span className="font-semibold text-white">{p.player_name} <span className="text-gray-500 font-normal">— slot #{p.draft_position}</span></span>
-                  {!session && <button onClick={() => removePlayer(p.player_id)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>}
+                <div key={p.player_id} style={{
+                  display:'flex', justifyContent:'space-between', alignItems:'center',
+                  background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8,
+                  padding:'10px 14px', fontSize:14,
+                }}>
+                  <div>
+                    <span style={{ fontWeight:600, color:'var(--text)' }}>{p.player_name}</span>
+                    <span style={{ color:'var(--muted)', marginLeft:10 }}>Slot #{p.draft_position}</span>
+                  </div>
+                  {!session && (
+                    <button onClick={()=>removePlayer(p.player_id)} style={{ background:'transparent', border:'none', color:'var(--red)', fontSize:13, cursor:'pointer', fontFamily:"'Barlow Condensed'", fontWeight:700, letterSpacing:'0.05em' }}>
+                      Remove
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
           )}
+
           {!session && (
-            <div className="flex gap-2">
-              <input type="text" placeholder="Player name" value={pName} onChange={e => setPName(e.target.value)}
-                className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
-              <input type="number" placeholder="Slot" value={pPos} onChange={e => setPPos(e.target.value)} min={1} max={10}
-                className="w-16 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
-              <button onClick={addPlayer} disabled={busy || !pName || !pPos}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Add</button>
+            <div style={{ display:'flex', gap:10, alignItems:'flex-end' }}>
+              <div style={{ flex:1 }}>
+                <label style={lbl}>Player Name</label>
+                <input type="text" value={pName} onChange={e=>setPName(e.target.value)} placeholder="e.g. Alice" style={inp} />
+              </div>
+              <div style={{ width:80 }}>
+                <label style={lbl}>Slot #</label>
+                <input type="number" value={pPos} onChange={e=>setPPos(e.target.value)} min={1} max={10} placeholder="1" style={inp} />
+              </div>
+              <button onClick={addPlayer} disabled={busy||!pName||!pPos} style={{ ...btn('ghost'), opacity: busy||!pName||!pPos ? 0.4 : 1, flexShrink:0 }}>
+                Add
+              </button>
             </div>
           )}
         </section>
       )}
 
+      {/* 3. Start draft */}
       {season && !session && (
         <section>
-          <h3 className="text-lg font-bold text-white mb-2">3. Start Draft</h3>
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 10px' }}>3 — Start Draft</h3>
           {canStart ? (
-            <>
-              <p className="text-green-400 text-sm mb-3">✓ Ready — {players.length} players, {20 / players.length} rounds each</p>
-              <button onClick={startDraft} disabled={busy}
-                className="bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white font-bold px-6 py-2.5 rounded-lg transition">
+            <div>
+              <p style={{ color:'var(--green)', fontSize:14, marginBottom:12 }}>
+                ✓ Ready! {players.length} players · {20/players.length} rounds each
+              </p>
+              <button onClick={startDraft} disabled={busy} style={{ ...btn('green'), opacity: busy ? 0.4 : 1, fontSize:16, padding:'12px 28px' }}>
                 🚦 Start Draft
               </button>
-            </>
+            </div>
           ) : (
-            <p className="text-yellow-500 text-sm">
-              {players.length < 2 ? 'Add at least 2 players.' : `${players.length} players doesn't divide evenly into 20. Use 4 or 5 players.`}
+            <p style={{ color:'var(--gold)', fontSize:14 }}>
+              {players.length < 2
+                ? 'Add at least 2 players first.'
+                : `${players.length} players doesn't divide into 20 drivers. Use 4 or 5 players.`}
             </p>
           )}
         </section>
@@ -223,13 +357,13 @@ function SetupTab({ season, players, session, reload, flash }) {
 
       {session && (
         <section>
-          <h3 className="text-lg font-bold text-white mb-2">3. Draft Status</h3>
-          <div className="bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-sm">
-            <span className={session.is_complete ? 'text-green-400' : 'text-yellow-400'}>
-              {session.is_complete ? '✓ Draft complete' : '🔄 Draft in progress'}
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 10px' }}>3 — Draft Status</h3>
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', fontSize:14 }}>
+            <span style={{ color: session.is_complete ? 'var(--green)' : 'var(--gold)', fontWeight:600 }}>
+              {session.is_complete ? '✓ Complete' : '🔄 In Progress'}
             </span>
-            <span className="text-gray-400 ml-2">
-              · Pick {session.current_pick_num - 1}/{session.total_drivers} · {session.total_rounds} rounds
+            <span style={{ color:'var(--muted)', marginLeft:10 }}>
+              {session.current_pick_num - 1}/{session.total_drivers} picks · {session.total_rounds} rounds
             </span>
           </div>
         </section>
@@ -238,72 +372,94 @@ function SetupTab({ season, players, session, reload, flash }) {
   )
 }
 
-/* ── RACES TAB ─────────────────────────────────────────────── */
-function RacesTab({ season, races, reload, flash }) {
-  const [wkNum, setWkNum] = useState('')
-  const [rName, setRName] = useState('')
-  const [tName, setTName] = useState('')
-  const [rDate, setRDate] = useState('')
-  const [busy,  setBusy]  = useState(false)
-  const [err,   setErr]   = useState('')
+// ── RACES TAB ──────────────────────────────────────────────────
+function RacesTab({ season, races, reload, flash, boom }) {
+  const [wk,   setWk]   = useState('')
+  const [name, setName] = useState('')
+  const [trk,  setTrk]  = useState('')
+  const [dt,   setDt]   = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const nextWeek = (races.length > 0 ? Math.max(...races.map(r => r.week_number)) : 0) + 1
+  const nextWk = races.length > 0 ? Math.max(...races.map(r=>r.week_number)) + 1 : 1
 
   async function addRace() {
-    setBusy(true); setErr('')
+    setBusy(true)
     const { error } = await supabase.from('races').insert({
-      season_id: season.season_id, week_number: parseInt(wkNum || nextWeek, 10),
-      race_name: rName, track_name: tName || null, race_date: rDate || null,
+      season_id:   season.season_id,
+      week_number: parseInt(wk||nextWk, 10),
+      race_name:   name,
+      track_name:  trk||null,
+      race_date:   dt||null,
     })
     setBusy(false)
-    if (error) { setErr(error.message); return }
-    setWkNum(''); setRName(''); setTName(''); setRDate('')
-    flash(`Race "${rName}" added!`); reload()
+    if (error) { boom(error.message); return }
+    setName(''); setTrk(''); setDt(''); setWk('')
+    flash(`Race "${name}" added!`)
+    reload()
   }
 
-  if (!season) return <p className="text-gray-400 text-sm">Create a season first.</p>
+  if (!season) return <p style={{ color:'var(--muted)', fontSize:14 }}>Create a season first (Setup tab).</p>
 
   return (
-    <div className="max-w-lg space-y-6">
-      {err && <p className="text-red-400 text-sm bg-red-900/30 border border-red-700 rounded px-3 py-2">{err}</p>}
+    <div style={{ maxWidth:560, display:'flex', flexDirection:'column', gap:28 }}>
+
       <section>
-        <h3 className="text-lg font-bold text-white mb-3">Add New Race</h3>
-        <div className="space-y-3">
-          <div className="flex gap-3">
-            <div className="w-24">
-              <label className="text-xs text-gray-400 block mb-1">Week #</label>
-              <input type="number" value={wkNum || nextWeek} onChange={e => setWkNum(e.target.value)} min={1}
-                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
+        <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 16px' }}>Add Race</h3>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'80px 1fr', gap:12 }}>
+            <div>
+              <label style={lbl}>Week #</label>
+              <input type="number" value={wk||nextWk} onChange={e=>setWk(e.target.value)} min={1} style={inp} />
             </div>
-            <div className="flex-1">
-              <label className="text-xs text-gray-400 block mb-1">Race Name *</label>
-              <input type="text" placeholder="e.g. Daytona 500" value={rName} onChange={e => setRName(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
+            <div>
+              <label style={lbl}>Race Name *</label>
+              <input type="text" value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Daytona 500" style={inp} />
             </div>
           </div>
-          <input type="text" placeholder="Track name (optional)" value={tName} onChange={e => setTName(e.target.value)}
-            className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
-          <input type="date" value={rDate} onChange={e => setRDate(e.target.value)}
-            className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500" />
-          <button onClick={addRace} disabled={busy || !rName}
-            className="bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white text-sm font-semibold px-6 py-2 rounded-lg transition">
-            Add Race
-          </button>
+          <div>
+            <label style={lbl}>Track Name</label>
+            <input type="text" value={trk} onChange={e=>setTrk(e.target.value)} placeholder="e.g. Daytona International Speedway" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Race Date</label>
+            <input type="date" value={dt} onChange={e=>setDt(e.target.value)} style={{ ...inp, width:'auto', maxWidth:220 }} />
+          </div>
+          <div>
+            <button onClick={addRace} disabled={busy||!name} style={{ ...btn('red'), opacity: busy||!name ? 0.4 : 1 }}>
+              Add Race
+            </button>
+          </div>
         </div>
       </section>
+
       {races.length > 0 && (
         <section>
-          <h3 className="text-lg font-bold text-white mb-3">Schedule ({races.length} races)</h3>
-          <div className="space-y-1.5">
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 14px' }}>Schedule</h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
             {[...races].reverse().map(r => (
-              <div key={r.race_id} className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 flex items-center justify-between text-sm">
-                <div>
-                  <span className="text-yellow-500 font-bold mr-2">W{r.week_number}</span>
-                  <span className="text-white font-semibold">{r.race_name}</span>
-                  {r.track_name && <span className="text-gray-500 ml-1.5 hidden sm:inline">· {r.track_name}</span>}
+              <div key={r.race_id} style={{
+                display:'flex', justifyContent:'space-between', alignItems:'center',
+                background:'var(--bg)', border:'1px solid var(--border)', borderRadius:9,
+                padding:'11px 16px', fontSize:14, gap:10,
+              }}>
+                <div style={{ minWidth:0 }}>
+                  <span style={{ color:'var(--gold)', fontFamily:"'Barlow Condensed'", fontWeight:700, marginRight:10 }}>W{r.week_number}</span>
+                  <span style={{ color:'var(--text)', fontWeight:500 }}>{r.race_name}</span>
+                  {r.track_name && <span style={{ color:'var(--muted)', fontSize:13, marginLeft:8 }}>· {r.track_name}</span>}
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${r.is_complete ? 'bg-green-900 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
-                  {r.is_complete ? 'Complete' : 'Scheduled'}
+                <span style={{
+                  flexShrink:0,
+                  background: r.is_complete ? 'rgba(34,197,94,0.15)' : 'var(--surface2)',
+                  color: r.is_complete ? 'var(--green)' : 'var(--muted)',
+                  borderRadius:6,
+                  padding:'2px 10px',
+                  fontFamily:"'Barlow Condensed', sans-serif",
+                  fontSize:12,
+                  fontWeight:700,
+                  letterSpacing:'0.05em',
+                  textTransform:'uppercase',
+                }}>
+                  {r.is_complete ? 'Complete' : 'Upcoming'}
                 </span>
               </div>
             ))}
@@ -314,120 +470,155 @@ function RacesTab({ season, races, reload, flash }) {
   )
 }
 
-/* ── RESULTS TAB ───────────────────────────────────────────── */
-function ResultsTab({ season, races, session, reload, flash }) {
-  const [selectedRaceId, setSelectedRaceId] = useState('')
-  const [draftedDrivers, setDraftedDrivers] = useState([])
-  const [positions,      setPositions]      = useState({})
-  const [dnfFlags,       setDnfFlags]       = useState({})
-  const [saving,         setSaving]         = useState(false)
-  const [err,            setErr]            = useState('')
+// ── RESULTS TAB ────────────────────────────────────────────────
+function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
+  const [raceId,   setRaceId]   = useState('')
+  const [drafted,  setDrafted]  = useState([])
+  const [pos,      setPos]      = useState({})
+  const [dnf,      setDnf]      = useState({})
+  const [saving,   setSaving]   = useState(false)
 
   useEffect(() => {
-    if (!selectedRaceId || !session) return
-    async function loadPicks() {
+    if (!raceId || !session) return
+    async function load() {
       const { data: picks } = await supabase
         .from('draft_picks')
-        .select('driver_id, drivers(driver_name, car_number, team)')
+        .select('driver_id, drivers(driver_name, car_number, team), players!inner(player_name)')
         .eq('draft_session_id', session.draft_session_id)
-      setDraftedDrivers(picks || [])
+      setDrafted(picks||[])
 
-      const { data: existing } = await supabase.from('race_results').select('*').eq('race_id', parseInt(selectedRaceId, 10))
-      const pos = {}, dnf = {}
-      ;(existing || []).forEach(r => { pos[r.driver_id] = r.finish_position; dnf[r.driver_id] = r.dnf })
-      setPositions(pos); setDnfFlags(dnf)
+      const { data: existing } = await supabase.from('race_results').select('*').eq('race_id', parseInt(raceId,10))
+      const pm={}, dm={}
+      ;(existing||[]).forEach(r=>{ pm[r.driver_id]=r.finish_position; dm[r.driver_id]=r.dnf })
+      setPos(pm); setDnf(dm)
     }
-    loadPicks()
-  }, [selectedRaceId, session])
+    load()
+  }, [raceId, session])
 
-  async function saveResults() {
-    setSaving(true); setErr('')
-    const toSave = draftedDrivers
-      .filter(d => positions[d.driver_id])
+  async function save() {
+    setSaving(true)
+    const rows = drafted
+      .filter(d => pos[d.driver_id])
       .map(d => ({
-        race_id:         parseInt(selectedRaceId, 10),
+        race_id:         parseInt(raceId,10),
         driver_id:       d.driver_id,
-        finish_position: parseInt(positions[d.driver_id], 10),
-        dnf:             dnfFlags[d.driver_id] || false,
+        finish_position: parseInt(pos[d.driver_id],10),
+        dnf:             dnf[d.driver_id]||false,
       }))
-    if (toSave.length === 0) { setErr('Enter at least one finish position.'); setSaving(false); return }
 
-    const posVals = toSave.map(r => r.finish_position)
-    if (new Set(posVals).size !== posVals.length) { setErr('Two drivers cannot share the same finish position.'); setSaving(false); return }
+    if (!rows.length) { boom('Enter at least one finish position.'); setSaving(false); return }
 
-    const { error } = await supabase.from('race_results').upsert(toSave, { onConflict: 'race_id,driver_id' })
-    await supabase.from('races').update({ is_complete: true }).eq('race_id', selectedRaceId)
+    const vals = rows.map(r=>r.finish_position)
+    if (new Set(vals).size !== vals.length) { boom('Two drivers can\'t share the same finish position.'); setSaving(false); return }
+
+    const { error } = await supabase.from('race_results').upsert(rows, { onConflict:'race_id,driver_id' })
+    await supabase.from('races').update({ is_complete:true }).eq('race_id', raceId)
+
     setSaving(false)
-    if (error) { setErr(error.message); return }
-    flash(`Saved ${toSave.length} results! Standings updated automatically.`)
+    if (error) { boom(error.message); return }
+    flash(`Saved ${rows.length} results! Standings updated automatically.`)
     reload()
   }
 
-  if (!season)  return <p className="text-gray-400 text-sm">Create a season first.</p>
-  if (!session) return <p className="text-gray-400 text-sm">Start the draft before entering results.</p>
-  if (races.length === 0) return <p className="text-gray-400 text-sm">Add races first (use the Races tab).</p>
+  if (!season)  return <p style={{ color:'var(--muted)', fontSize:14 }}>Create a season first.</p>
+  if (!session) return <p style={{ color:'var(--muted)', fontSize:14 }}>Start the draft before entering results.</p>
+  if (!races.length) return <p style={{ color:'var(--muted)', fontSize:14 }}>Add races first (Races tab).</p>
 
   return (
-    <div className="max-w-2xl space-y-5">
-      {err && <p className="text-red-400 text-sm bg-red-900/30 border border-red-700 rounded px-3 py-2">{err}</p>}
+    <div style={{ maxWidth:660, display:'flex', flexDirection:'column', gap:20 }}>
       <div>
-        <label className="text-sm text-gray-400 block mb-2">Select race:</label>
-        <select value={selectedRaceId} onChange={e => setSelectedRaceId(e.target.value)}
-          className="bg-gray-900 border border-gray-600 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-red-500 w-full sm:w-auto">
-          <option value="">— choose a race —</option>
-          {races.map(r => (
-            <option key={r.race_id} value={r.race_id}>Week {r.week_number} — {r.race_name} {r.is_complete ? '✓' : ''}</option>
+        <label style={lbl}>Race</label>
+        <select
+          value={raceId}
+          onChange={e=>setRaceId(e.target.value)}
+          style={{ ...inp, maxWidth:420, width:'100%' }}
+        >
+          <option value="">— select a race —</option>
+          {races.map(r=>(
+            <option key={r.race_id} value={r.race_id}>
+              Week {r.week_number} — {r.race_name} {r.is_complete?'✓':''}
+            </option>
           ))}
         </select>
       </div>
 
-      {selectedRaceId && draftedDrivers.length > 0 && (
+      {raceId && drafted.length > 0 && (
         <>
-          <p className="text-gray-500 text-xs">Enter each driver's official finish position. Leave blank if they didn't race. Standings update automatically on save.</p>
-          <div className="bg-gray-900 rounded-xl overflow-hidden border border-gray-700">
-            <div className="grid grid-cols-12 text-xs font-semibold uppercase tracking-wider text-gray-400 bg-gray-800 px-4 py-2">
-              <div className="col-span-5">Driver</div>
-              <div className="col-span-3">Team</div>
-              <div className="col-span-2 text-center">Finish</div>
-              <div className="col-span-2 text-center">DNF</div>
-            </div>
-            {[...draftedDrivers].sort((a, b) => a.drivers.driver_name.localeCompare(b.drivers.driver_name)).map(d => (
-              <div key={d.driver_id} className="grid grid-cols-12 items-center px-4 py-2.5 border-t border-gray-800 hover:bg-gray-800/40">
-                <div className="col-span-5">
-                  <span className="text-white text-sm font-medium">{d.drivers.driver_name}</span>
-                  <span className="text-yellow-500 text-xs ml-1">#{d.drivers.car_number}</span>
+          <p style={{ color:'var(--muted)', fontSize:13, margin:0 }}>
+            Enter the official finish position for each drafted driver. Leave blank if they didn't participate.
+            Standings update automatically when you save.
+          </p>
+
+          {/* Column headers */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 160px 90px 60px', gap:'0 12px', borderBottom:'1px solid var(--border)', paddingBottom:8 }}>
+            {['Driver','Team','Finish','DNF'].map(h=>(
+              <span key={h} style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)' }}>{h}</span>
+            ))}
+          </div>
+
+          {/* Driver rows */}
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {[...drafted].sort((a,b)=>a.drivers.driver_name.localeCompare(b.drivers.driver_name)).map(d=>(
+              <div key={d.driver_id} style={{
+                display:'grid',
+                gridTemplateColumns:'1fr 160px 90px 60px',
+                gap:'0 12px',
+                alignItems:'center',
+                background:'var(--bg)',
+                border:'1px solid var(--border)',
+                borderRadius:9,
+                padding:'9px 14px',
+              }}>
+                <div>
+                  <span style={{ fontWeight:600, color:'var(--text)', fontSize:14 }}>{d.drivers.driver_name}</span>
+                  <span style={{ color:'var(--gold)', fontSize:12, marginLeft:6 }}>#{d.drivers.car_number}</span>
                 </div>
-                <div className="col-span-3 text-gray-500 text-xs truncate pr-2">{d.drivers.team}</div>
-                <div className="col-span-2 flex justify-center">
-                  <input type="number" min={1} max={40} value={positions[d.driver_id] || ''} placeholder="—"
-                    onChange={e => setPositions(prev => ({ ...prev, [d.driver_id]: e.target.value }))}
-                    className="w-14 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm text-center focus:outline-none focus:border-red-500" />
-                </div>
-                <div className="col-span-2 flex justify-center">
-                  <input type="checkbox" checked={dnfFlags[d.driver_id] || false}
-                    onChange={e => setDnfFlags(prev => ({ ...prev, [d.driver_id]: e.target.checked }))}
-                    className="w-4 h-4 accent-red-600" />
+                <span style={{ color:'var(--muted)', fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {d.drivers.team}
+                </span>
+                <input
+                  type="number"
+                  min={1} max={40}
+                  value={pos[d.driver_id]||''}
+                  onChange={e=>setPos(prev=>({...prev,[d.driver_id]:e.target.value}))}
+                  placeholder="—"
+                  style={{ ...inp, textAlign:'center', padding:'7px 8px', fontSize:15, fontWeight:700 }}
+                />
+                <div style={{ display:'flex', justifyContent:'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={dnf[d.driver_id]||false}
+                    onChange={e=>setDnf(prev=>({...prev,[d.driver_id]:e.target.checked}))}
+                    style={{ width:18, height:18, accentColor:'var(--red)', cursor:'pointer' }}
+                  />
                 </div>
               </div>
             ))}
           </div>
-          <button onClick={saveResults} disabled={saving}
-            className="bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white font-bold px-8 py-2.5 rounded-lg transition">
-            {saving ? 'Saving…' : '💾 Save All Results'}
-          </button>
+
+          <div>
+            <button onClick={save} disabled={saving} style={{ ...btn('green'), opacity: saving ? 0.4 : 1, fontSize:15, padding:'12px 28px' }}>
+              {saving ? 'Saving…' : '💾 Save All Results'}
+            </button>
+          </div>
         </>
       )}
-      {selectedRaceId && draftedDrivers.length === 0 && (
-        <p className="text-yellow-500 text-sm">No draft picks found. Complete the draft first.</p>
+
+      {raceId && !drafted.length && (
+        <p style={{ color:'var(--gold)', fontSize:14 }}>No draft picks found — complete the draft first.</p>
       )}
     </div>
   )
 }
 
-/* ── Page export ───────────────────────────────────────────── */
+// ── Page export ────────────────────────────────────────────────
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false)
-  useEffect(() => { if (sessionStorage.getItem('nascar_admin') === '1') setAuthed(true) }, [])
+
+  useEffect(() => {
+    if (sessionStorage.getItem('nascar_admin')==='1') setAuthed(true)
+  }, [])
+
   if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
   return <AdminPanel />
 }

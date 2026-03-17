@@ -2,44 +2,89 @@ import '../styles/globals.css'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 
-function Navbar() {
-  const router = useRouter()
-  const links = [
-    { href: '/',        label: '🏆 Standings' },
-    { href: '/draft',   label: '🚗 Draft Room' },
-    { href: '/results', label: '📊 Results'    },
-    { href: '/admin',   label: '⚙️ Admin'      },
-  ]
-  return (
-    <nav className="bg-red-700 shadow-lg">
-      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-        <Link href="/" className="text-yellow-400 font-extrabold text-xl tracking-wider">
-          🏁 NASCAR Fantasy
-        </Link>
-        <div className="flex gap-1 flex-wrap">
-          {links.map(l => (
-            <Link key={l.href} href={l.href}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                router.pathname === l.href
-                  ? 'bg-yellow-400 text-red-900'
-                  : 'text-white hover:bg-red-600'
-              }`}>
-              {l.label}
-            </Link>
-          ))}
-        </div>
-      </div>
-    </nav>
-  )
-}
+const NAV = [
+  { href: '/',        label: 'Standings', icon: '🏆' },
+  { href: '/draft',   label: 'Draft',     icon: '🚗' },
+  { href: '/results', label: 'Results',   icon: '📊' },
+  { href: '/admin',   label: 'Admin',     icon: '⚙️'  },
+]
 
 export default function App({ Component, pageProps }) {
+  const router = useRouter()
   return (
-    <div className="min-h-screen bg-gray-900">
-      <Navbar />
-      <main className="max-w-5xl mx-auto px-4 py-8">
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+
+      {/* Top nav */}
+      <nav style={{
+        background: 'var(--surface)',
+        borderBottom: '1px solid var(--border)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+      }}>
+        {/* Racing stripe across very top */}
+        <div className="racing-bar" />
+
+        <div style={{
+          maxWidth: 1100,
+          margin: '0 auto',
+          padding: '0 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          height: 58,
+        }}>
+          {/* Logo */}
+          <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 22 }}>🏁</span>
+            <span style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 24,
+              letterSpacing: '0.08em',
+              color: 'var(--text)',
+            }}>
+              NASCAR <span style={{ color: 'var(--red)' }}>Fantasy</span>
+            </span>
+          </Link>
+
+          {/* Nav links */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {NAV.map(n => {
+              const active = router.pathname === n.href
+              return (
+                <Link key={n.href} href={n.href} style={{
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: active ? '#fff' : 'var(--muted)',
+                  background: active ? 'var(--red)' : 'transparent',
+                  transition: 'all 0.15s',
+                }}>
+                  <span style={{ fontSize: 13 }}>{n.icon}</span>
+                  <span className="hide-mobile">{n.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      </nav>
+
+      {/* Page content */}
+      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 20px' }}>
         <Component {...pageProps} />
       </main>
+
+      <style>{`
+        @media (max-width: 500px) { .hide-mobile { display: none; } }
+      `}</style>
     </div>
   )
 }
