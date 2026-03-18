@@ -295,7 +295,7 @@ export default function MetricsPage() {
                             {best?.total ?? '—'}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'var(--green)' }}>
-                            {best?.rank ? `${ordinal(best.rank)} of ${totalDriverCount}` : '—'}
+                            {best?.rank ? ordinal(best.rank) : '—'}
                           </td>
                           {/* Worst */}
                           <td style={{ padding:'14px 16px', textAlign:'center' }}>
@@ -306,7 +306,7 @@ export default function MetricsPage() {
                             {worst?.total ?? '—'}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'#f87171' }}>
-                            {worst?.rank ? `${ordinal(worst.rank)} of ${totalDriverCount}` : '—'}
+                            {worst?.rank ? ordinal(worst.rank) : '—'}
                           </td>
                         </tr>
                       )
@@ -343,7 +343,7 @@ export default function MetricsPage() {
                           Pick
                         </th>
                         {players.map((pl, pi) => (
-                          <th key={pl.player_id} style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:PLAYER_COLORS[pi%5], textAlign:'center', whiteSpace:'nowrap' }}>
+                          <th key={pl.player_id} style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:20, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:PLAYER_COLORS[pi%5], textAlign:'center', whiteSpace:'nowrap' }}>
                             {pl.player_name}
                           </th>
                         ))}
@@ -367,10 +367,9 @@ export default function MetricsPage() {
                                       {rank ?? '—'}
                                     </div>
                                     <div style={{ fontSize:10, color:'var(--dim)', marginTop:1 }}>of {totalDriverCount}</div>
-                                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
+                                    <div style={{ fontSize:14, color:'var(--muted)', marginTop:2 }}>
                                       {pick.drivers?.driver_name}
                                     </div>
-                                    <div style={{ fontSize:10, color:'var(--dim)' }}>#{pick.drivers?.car_number}</div>
                                   </div>
                                 ) : <span style={{ color:'var(--dim)' }}>—</span>}
                               </td>
@@ -421,7 +420,7 @@ export default function MetricsPage() {
                           Pick
                         </th>
                         {players.map((pl, pi) => (
-                          <th key={pl.player_id} style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:PLAYER_COLORS[pi%5], textAlign:'center', whiteSpace:'nowrap' }}>
+                          <th key={pl.player_id} style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:20, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:PLAYER_COLORS[pi%5], textAlign:'center', whiteSpace:'nowrap' }}>
                             {pl.player_name}
                           </th>
                         ))}
@@ -453,17 +452,17 @@ export default function MetricsPage() {
                                     <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: textColor, letterSpacing:'0.04em', lineHeight:1 }}>
                                       {eff.toFixed(2)}
                                     </div>
-                                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
+                                    <div style={{ fontSize:14, color:'var(--muted)', marginTop:3 }}>
                                       {pick.drivers?.driver_name}
                                     </div>
-                                    <div style={{ fontSize:10, color:'var(--dim)' }}>
-                                      #{rank} of {totalDriverCount} ÷ Pick {pickPos}
+                                    <div style={{ fontSize:12, color:'var(--dim)', marginTop:2 }}>
+                                      Pick {pickPos} — {ordinal(rank)} place
                                     </div>
                                   </div>
                                 ) : pick ? (
                                   <div>
-                                    <div style={{ fontSize:11, color:'var(--dim)' }}>{pick.drivers?.driver_name}</div>
-                                    <div style={{ fontSize:10, color:'var(--dim)' }}>no results</div>
+                                    <div style={{ fontSize:14, color:'var(--dim)' }}>{pick.drivers?.driver_name}</div>
+                                    <div style={{ fontSize:12, color:'var(--dim)' }}>no results</div>
                                   </div>
                                 ) : <span style={{ color:'var(--dim)' }}>—</span>}
                               </td>
