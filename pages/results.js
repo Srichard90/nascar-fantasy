@@ -281,7 +281,7 @@ export default function ResultsPage() {
               {/* Week ranking bar */}
               {weekData.length > 0 && (
                 <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 28 }}>
-                  <div style={{ background: '#5a0a12', padding: '8px 20px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#e0a0a8' }}>
+                  <div style={{ background: '#5a0a12', padding: '8px 20px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ffffff' }}>
                     Week {race?.week_number} Rankings
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekData.length},1fr)`, borderTop: '1px solid var(--border)' }}>
@@ -306,7 +306,7 @@ export default function ResultsPage() {
                     <div style={{ borderBottom: `2px solid ${PLAYER_COLORS[i % 5]}`, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em' }}>{pd.player.player_name}</div>
-                        <div style={{ color: 'var(--dim)', fontSize: 12 }}>{pd.scored} / {pd.drivers.length} scored</div>
+
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: 'var(--gold)', letterSpacing: '0.04em' }}>{pd.total ?? '—'}</div>
