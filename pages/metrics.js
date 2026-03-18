@@ -333,9 +333,8 @@ export default function MetricsPage() {
                             const myPicks = playerPicksByRound(pl.player_id)
                             const pick = myPicks[roundIdx]
                             const rank = pick ? driverRanks[pick.driver_id] : null
-                            const bg   = rank ? heatColor(rank, minRank, maxRank) : 'transparent'
                             return (
-                              <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center', background: bg }}>
+                              <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center' }}>
                                 {pick ? (
                                   <div>
                                     <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: rank <= 5 ? 'var(--green)' : rank <= 10 ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.04em', lineHeight:1 }}>
@@ -412,7 +411,7 @@ export default function MetricsPage() {
                             const myPicks = playerPicksByRound(pl.player_id)
                             const pick = myPicks[roundIdx]
                             const rank = pick ? driverRanks[pick.driver_id] : null
-                            const pickPos = roundIdx + 1
+                            const pickPos = pick ? pick.pick_number : roundIdx + 1
                             const eff = rank ? (rank / pickPos) : null
 
                             // Heat: low eff (< 1) = green (good), high eff = red (bad)
@@ -435,7 +434,7 @@ export default function MetricsPage() {
                                       {pick.drivers?.driver_name}
                                     </div>
                                     <div style={{ fontSize:10, color:'var(--dim)' }}>
-                                      Rank {rank} ÷ Pick {pickPos}
+                                      Rank {rank} ÷ Overall Pick {pickPos}
                                     </div>
                                   </div>
                                 ) : pick ? (
