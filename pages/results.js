@@ -287,82 +287,91 @@ export default function ResultsPage() {
                     Week {race?.week_number} Rankings
                   </div>
 
-                  {/* Player columns — all in one grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekData.length}, 1fr)`, borderTop: '1px solid var(--border)', overflowX: 'auto' }}>
+                  {/* True 2D grid: header row + one row per driver slot
+                      Each cell in the same row shares height automatically */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${weekData.length}, 1fr)`,
+                    gridTemplateRows: `auto repeat(${Math.max(...weekData.map(pd => pd.drivers.length))}, auto)`,
+                    borderTop: '1px solid var(--border)',
+                    overflowX: 'auto',
+                  }}>
+
+                    {/* Header cells — row 1 */}
                     {weekData.map((pd, i) => (
-                      <div key={pd.player.player_id} style={{
+                      <div key={`hdr-${pd.player.player_id}`} style={{
+                        padding: '14px 16px',
+                        borderBottom: `2px solid ${PLAYER_COLORS[i % 5]}`,
                         borderRight: i < weekData.length - 1 ? '1px solid var(--border)' : 'none',
                         display: 'flex',
-                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 8,
                       }}>
-
-                        {/* Player header: name + total */}
-                        <div style={{
-                          padding: '14px 16px',
-                          borderBottom: `2px solid ${PLAYER_COLORS[i % 5]}`,
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: 8,
-                        }}>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>
-                              {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
-                            </div>
-                            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 20, fontWeight: 700, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                              {pd.player.player_name}
-                            </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>
+                            {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
                           </div>
-                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 30, color: i === 0 ? 'var(--gold)' : 'var(--text)', letterSpacing: '0.04em', lineHeight: 1 }}>
-                              {pd.total ?? '—'}
-                            </div>
-                            <div style={{ color: 'var(--dim)', fontSize: 10, fontFamily: "'Barlow Condensed'", textTransform: 'uppercase', letterSpacing: '0.05em' }}>pts</div>
+                          <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 20, fontWeight: 700, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            {pd.player.player_name}
                           </div>
                         </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 30, color: i === 0 ? 'var(--gold)' : 'var(--text)', letterSpacing: '0.04em', lineHeight: 1 }}>
+                            {pd.total ?? '—'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
 
-                        {/* Driver rows */}
-                        <div style={{ flex: 1 }}>
-                          {pd.drivers.map(d => (
-                            <div key={d.driver_id} style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'flex-start',
-                              padding: '10px 16px',
-                              minHeight: 56,
-                              borderBottom: '1px solid var(--border)',
-                              gap: 8,
-                            }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                                  <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: 16 }}>{d.name}</span>
-                                  <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.num}</span>
-                                  {d.label === 'swap' && (
-                                    <span style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>swap</span>
-                                  )}
-                                  {d.label === 'sub' && (
-                                    <span style={{ background: 'rgba(245,197,24,0.15)', color: 'var(--gold)', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>sub</span>
+                    {/* Driver cells — one row per driver slot, all columns rendered together
+                        so CSS grid aligns same-position rows across all players */}
+                    {Array.from({ length: Math.max(...weekData.map(pd => pd.drivers.length)) }).map((_, rowIdx) => (
+                      weekData.map((pd, i) => {
+                        const d = pd.drivers[rowIdx]
+                        return (
+                          <div key={`drv-${pd.player.player_id}-${rowIdx}`} style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 16px',
+                            borderBottom: '1px solid var(--border)',
+                            borderRight: i < weekData.length - 1 ? '1px solid var(--border)' : 'none',
+                            gap: 8,
+                            minHeight: 56,
+                          }}>
+                            {d ? (
+                              <>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                    <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: 16 }}>{d.name}</span>
+                                    <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.num}</span>
+                                    {d.label === 'swap' && (
+                                      <span style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>swap</span>
+                                    )}
+                                    {d.label === 'sub' && (
+                                      <span style={{ background: 'rgba(245,197,24,0.15)', color: 'var(--gold)', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>sub</span>
+                                    )}
+                                  </div>
+                                  {d.original_name && (
+                                    <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 2 }}>replaces {d.original_name}</div>
                                   )}
                                 </div>
-                                {d.original_name && (
-                                  <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 1 }}>replaces {d.original_name}</div>
-                                )}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                {d.result?.dnf && <span style={{ color: 'var(--red)', fontSize: 11, fontFamily: "'Barlow Condensed'", fontWeight: 700, letterSpacing: '0.06em' }}>DNF</span>}
-                                {d.result ? (
-                                  <span style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: posColor(d.result.finish_position), letterSpacing: '0.04em', minWidth: 32, textAlign: 'right' }}>
-                                    P{d.result.finish_position}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--dim)', fontSize: 12, fontStyle: 'italic' }}>—</span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                      </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                  {d.result?.dnf && <span style={{ color: 'var(--red)', fontSize: 11, fontFamily: "'Barlow Condensed'", fontWeight: 700, letterSpacing: '0.06em' }}>DNF</span>}
+                                  {d.result ? (
+                                    <span style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: posColor(d.result.finish_position), letterSpacing: '0.04em', minWidth: 32, textAlign: 'right' }}>
+                                      P{d.result.finish_position}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--dim)', fontSize: 12, fontStyle: 'italic' }}>—</span>
+                                  )}
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
+                        )
+                      })
                     ))}
                   </div>
                 </div>
