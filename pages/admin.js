@@ -271,9 +271,45 @@ function SetupTab({ season, players, session, reload, flash, boom }) {
       <section>
         <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 14px' }}>1 — Season</h3>
         {season ? (
-          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', fontSize:14 }}>
-            <span style={{ color:'var(--green)', fontWeight:600 }}>✓ Active: </span>
-            <span style={{ color:'var(--text)' }}>{season.season_name} ({season.season_year})</span>
+          <div>
+            <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', fontSize:14, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+              <div>
+                <span style={{ color:'var(--green)', fontWeight:600 }}>✓ Active: </span>
+                <span style={{ color:'var(--text)' }}>{season.season_name} ({season.season_year})</span>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!confirm(`End "${season.season_name}"? This marks it as inactive and cannot be undone from here. All data is preserved.`)) return
+                  setBusy(true)
+                  const { error } = await supabase.from('seasons').update({ is_active: false }).eq('season_id', season.season_id)
+                  setBusy(false)
+                  if (error) { boom(error.message); return }
+                  flash('Season ended. Create a new season below.')
+                  reload()
+                }}
+                disabled={busy}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(232,25,44,0.4)',
+                  borderRadius: 7,
+                  padding: '5px 14px',
+                  color: 'var(--red)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                  opacity: busy ? 0.4 : 1,
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(232,25,44,0.1)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                End Season
+              </button>
+            </div>
           </div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
