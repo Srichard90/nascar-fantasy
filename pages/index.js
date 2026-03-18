@@ -142,13 +142,7 @@ export default function StandingsPage() {
     if (seasonId && allSeasons.length) fetchData(seasonId)
   }, [seasonId, allSeasons, fetchData])
 
-  // Auto-refresh only for active season
-  useEffect(() => {
-    const active = allSeasons.find(s => s.is_active)
-    if (!active || seasonId !== active.season_id) return
-    const t = setInterval(() => fetchData(seasonId), 30000)
-    return () => clearInterval(t)
-  }, [seasonId, allSeasons, fetchData])
+  // No auto-refresh — reload the page to see updated standings
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
 
@@ -186,7 +180,7 @@ export default function StandingsPage() {
               <span style={{ color: 'var(--green)' }}>Lower adjusted points = better rank</span>
               &nbsp;·&nbsp;
               <span style={{ color: 'var(--gold)' }}>Win bonus: −10 pts per driver win</span>
-              {isActiveSeason && <span style={{ color: 'var(--dim)' }}>&nbsp;·&nbsp; Updates every 30s</span>}
+    
             </p>
           </div>
 
