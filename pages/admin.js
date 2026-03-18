@@ -472,14 +472,16 @@ function RacesTab({ season, races, reload, flash, boom }) {
 
 // ── RESULTS TAB ────────────────────────────────────────────────
 function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
-  const [raceId,  setRaceId]  = useState('')
-  const [pos,     setPos]     = useState({})
-  const [dnf,     setDnf]     = useState({})
-  const [saving,  setSaving]  = useState(false)
+  const [raceId,      setRaceId]      = useState('')
+  const [pos,         setPos]         = useState({})
+  const [dnf,         setDnf]         = useState({})
+  const [saving,      setSaving]      = useState(false)
+  const [dupDriverIds, setDupDriverIds] = useState(new Set())
 
   // Load existing results whenever a race is selected
   useEffect(() => {
     if (!raceId) return
+    setDupDriverIds(new Set())
     async function load() {
       const { data: existing } = await supabase
         .from('race_results').select('*').eq('race_id', parseInt(raceId, 10))
@@ -490,6 +492,28 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
     load()
   }, [raceId])
 
+  // Recompute duplicate set live as positions are typed
+  function handlePosChange(driverId, value) {
+    const updated = { ...pos, [driverId]: value }
+    setPos(updated)
+
+    // Find which positions appear more than once
+    const counts = {}
+    Object.entries(updated).forEach(([, v]) => {
+      const n = parseInt(v, 10)
+      if (n) counts[n] = (counts[n] || 0) + 1
+    })
+    const dupPositions = new Set(
+      Object.entries(counts).filter(([, c]) => c > 1).map(([n]) => parseInt(n, 10))
+    )
+    const dupIds = new Set(
+      Object.entries(updated)
+        .filter(([, v]) => dupPositions.has(parseInt(v, 10)))
+        .map(([id]) => parseInt(id, 10))
+    )
+    setDupDriverIds(dupIds)
+  }
+
   // All active drivers sorted by car number numerically
   const sortedDrivers = [...(drivers || [])].sort((a, b) => {
     const na = parseInt(a.car_number, 10)
@@ -499,6 +523,12 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
   })
 
   async function save() {
+    // Block if any duplicates are still present
+    if (dupDriverIds.size > 0) {
+      boom("Fix duplicate finish positions (highlighted in red) before saving.")
+      return
+    }
+
     setSaving(true)
     const rows = sortedDrivers
       .filter(d => pos[d.driver_id])
@@ -511,9 +541,6 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
 
     if (!rows.length) { boom('Enter at least one finish position.'); setSaving(false); return }
 
-    const vals = rows.map(r => r.finish_position)
-    if (new Set(vals).size !== vals.length) { boom("Two drivers can't share the same finish position."); setSaving(false); return }
-
     const { error } = await supabase.from('race_results').upsert(rows, { onConflict: 'race_id,driver_id' })
     await supabase.from('races').update({ is_complete: true }).eq('race_id', raceId)
 
@@ -525,6 +552,8 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
 
   if (!season)       return <p style={{ color: 'var(--muted)', fontSize: 14 }}>Create a season first.</p>
   if (!races.length) return <p style={{ color: 'var(--muted)', fontSize: 14 }}>Add races first (Races tab).</p>
+
+  const hasDups = dupDriverIds.size > 0
 
   return (
     <div style={{ maxWidth: 660, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -551,6 +580,23 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
             Leave blank to skip. Standings update automatically on save.
           </p>
 
+          {/* Duplicate warning banner */}
+          {hasDups && (
+            <div style={{
+              background: 'rgba(232,25,44,0.12)',
+              border: '1px solid rgba(232,25,44,0.5)',
+              borderRadius: 8,
+              padding: '10px 16px',
+              fontSize: 13,
+              color: '#ff6b7a',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              ⚠️ <strong>{dupDriverIds.size} drivers share duplicate finish positions.</strong> Fix the highlighted rows before saving.
+            </div>
+          )}
+
           {/* Column headers */}
           <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 90px 60px', gap: '0 12px', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
             {['#', 'Driver', 'Finish', 'DNF'].map(h => (
@@ -560,47 +606,84 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
 
           {/* Driver rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {sortedDrivers.map(d => (
-              <div key={d.driver_id} style={{
-                display: 'grid',
-                gridTemplateColumns: '60px 1fr 90px 60px',
-                gap: '0 12px',
-                alignItems: 'center',
-                background: pos[d.driver_id] ? 'rgba(245,197,24,0.05)' : 'var(--bg)',
-                border: `1px solid ${pos[d.driver_id] ? 'var(--border2)' : 'var(--border)'}`,
-                borderRadius: 9,
-                padding: '8px 14px',
-              }}>
-                <span style={{ color: 'var(--gold)', fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 15 }}>
-                  #{d.car_number}
-                </span>
-                <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14 }}>
-                  {d.driver_name}
-                </span>
-                <input
-                  type="number"
-                  min={1} max={43}
-                  value={pos[d.driver_id] || ''}
-                  onChange={e => setPos(prev => ({ ...prev, [d.driver_id]: e.target.value }))}
-                  placeholder="—"
-                  style={{ ...inp, textAlign: 'center', padding: '7px 8px', fontSize: 15, fontWeight: 700 }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {sortedDrivers.map(d => {
+              const isDup = dupDriverIds.has(d.driver_id)
+              const hasPos = !!pos[d.driver_id]
+              return (
+                <div key={d.driver_id} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '60px 1fr 90px 60px',
+                  gap: '0 12px',
+                  alignItems: 'center',
+                  background: isDup
+                    ? 'rgba(232,25,44,0.1)'
+                    : hasPos ? 'rgba(245,197,24,0.05)' : 'var(--bg)',
+                  border: `1px solid ${isDup ? 'rgba(232,25,44,0.6)' : hasPos ? 'var(--border2)' : 'var(--border)'}`,
+                  borderRadius: 9,
+                  padding: '8px 14px',
+                  transition: 'background 0.15s, border-color 0.15s',
+                }}>
+                  <span style={{ color: isDup ? '#ff6b7a' : 'var(--gold)', fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 15 }}>
+                    #{d.car_number}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 600, color: isDup ? '#ff6b7a' : 'var(--text)', fontSize: 14 }}>
+                      {d.driver_name}
+                    </span>
+                    {isDup && (
+                      <span style={{
+                        background: 'rgba(232,25,44,0.2)',
+                        color: '#ff6b7a',
+                        borderRadius: 4,
+                        padding: '1px 7px',
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                      }}>
+                        duplicate
+                      </span>
+                    )}
+                  </div>
                   <input
-                    type="checkbox"
-                    checked={dnf[d.driver_id] || false}
-                    onChange={e => setDnf(prev => ({ ...prev, [d.driver_id]: e.target.checked }))}
-                    style={{ width: 18, height: 18, accentColor: 'var(--red)', cursor: 'pointer' }}
+                    type="number"
+                    min={1} max={43}
+                    value={pos[d.driver_id] || ''}
+                    onChange={e => handlePosChange(d.driver_id, e.target.value)}
+                    placeholder="—"
+                    style={{
+                      ...inp,
+                      textAlign: 'center',
+                      padding: '7px 8px',
+                      fontSize: 15,
+                      fontWeight: 700,
+                      borderColor: isDup ? 'rgba(232,25,44,0.7)' : undefined,
+                      color: isDup ? '#ff6b7a' : 'var(--text)',
+                    }}
                   />
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={dnf[d.driver_id] || false}
+                      onChange={e => setDnf(prev => ({ ...prev, [d.driver_id]: e.target.checked }))}
+                      style={{ width: 18, height: 18, accentColor: 'var(--red)', cursor: 'pointer' }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           <div>
-            <button onClick={save} disabled={saving} style={{ ...btn('green'), opacity: saving ? 0.4 : 1, fontSize: 15, padding: '12px 28px' }}>
+            <button onClick={save} disabled={saving || hasDups} style={{ ...btn('green'), opacity: saving || hasDups ? 0.4 : 1, fontSize: 15, padding: '12px 28px' }}>
               {saving ? 'Saving…' : '💾 Save All Results'}
             </button>
+            {hasDups && (
+              <span style={{ marginLeft: 12, color: '#ff6b7a', fontSize: 13, fontFamily: "'Barlow Condensed'", letterSpacing: '0.04em' }}>
+                Resolve duplicates to enable save
+              </span>
+            )}
           </div>
         </>
       )}
