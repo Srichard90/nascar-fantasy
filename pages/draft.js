@@ -543,7 +543,7 @@ export default function DraftPage() {
                     {/* Draft board */}
                     <div>
                       <h2 style={{ fontSize:24, margin:'0 0 12px', color:'var(--text)' }}>Draft Board</h2>
-                      <DraftBoard players={players} picks={picks} session={session} swaps={swaps} />
+                      <DraftBoard players={players} picks={picks} session={session} />
                     </div>
                   </div>
                 </>
