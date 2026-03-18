@@ -189,8 +189,6 @@ export default function StandingsPage() {
                 <th style={th}>Base Pts</th>
                 <th style={th}>Wins</th>
                 <th style={{ ...th, color: 'var(--gold)' }}>Adj. Pts</th>
-                <th style={th}>Races</th>
-                <th style={th}>Best Wk</th>
                 <th style={{ ...th, color: '#f87171' }}>− Leader</th>
                 <th style={{ ...th, color: '#fb923c' }}>− Next</th>
               </tr>
@@ -267,18 +265,6 @@ export default function StandingsPage() {
                           −{row.wins * 10}
                         </span>
                       )}
-                    </td>
-
-                    {/* Races scored */}
-                    <td style={{ padding: '14px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 15 }}>
-                      {row.weeks_scored}
-                    </td>
-
-                    {/* Best week */}
-                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                      <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: 15 }}>
-                        {row.best_week ?? '—'}
-                      </span>
                     </td>
 
                     {/* Points behind leader */}
