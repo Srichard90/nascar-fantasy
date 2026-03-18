@@ -211,6 +211,7 @@ function HistoricalDraft({ season }) {
     load()
   }, [season])
 
+  if (!season) return <Loader />
   if (loading) return <Loader />
 
   if (!session) return (
@@ -376,7 +377,7 @@ export default function DraftPage() {
     (d.team||'').toLowerCase().includes(search.toLowerCase())
   )
 
-  if (loading && allSeasons.length === 0) return <Loader />
+  if (!seasonId || (loading && allSeasons.length === 0)) return <Loader />
 
   return (
     <div className="fade-up">
@@ -397,7 +398,7 @@ export default function DraftPage() {
       </div>
 
       {/* Historical view */}
-      {!isActiveSeason && (
+      {!isActiveSeason && season && (
         <HistoricalDraft season={season} />
       )}
 
