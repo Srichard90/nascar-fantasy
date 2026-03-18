@@ -309,7 +309,7 @@ export default function ResultsPage() {
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>
                               {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
                             </div>
-                            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 16, fontWeight: 700, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 20, fontWeight: 700, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                               {pd.player.player_name}
                             </div>
                           </div>
@@ -334,7 +334,7 @@ export default function ResultsPage() {
                             }}>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                                  <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: 20 }}>{d.name}</span>
+                                  <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: 16 }}>{d.name}</span>
                                   <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.num}</span>
                                   {d.label === 'swap' && (
                                     <span style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>swap</span>
