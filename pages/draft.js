@@ -77,20 +77,20 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
 
   return (
     <div style={{ overflowX:'auto' }}>
-      <div style={{ display:'grid', gridTemplateColumns:`repeat(${players.length}, minmax(140px, 1fr))`, gap:10, minWidth: players.length * 150 }}>
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${players.length}, minmax(170px, 1fr))`, gap:12, minWidth: players.length * 180 }}>
         {players.map((p, i) => (
           <div key={p.player_id}>
             <div style={{
               textAlign:'center',
               fontFamily:"'Barlow Condensed', sans-serif",
               fontWeight:700,
-              fontSize:13,
+              fontSize:18,
               letterSpacing:'0.06em',
               textTransform:'uppercase',
               color: PLAYER_COLORS[i%5],
               borderBottom: `2px solid ${PLAYER_COLORS[i%5]}`,
-              paddingBottom:6,
-              marginBottom:8,
+              paddingBottom:8,
+              marginBottom:10,
             }}>
               {p.player_name}
             </div>
@@ -103,14 +103,14 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
                     <div key={pk.draft_pick_id} style={{
                       background: swap ? 'rgba(99,102,241,0.08)' : 'var(--surface)',
                       border: `1px solid ${swap ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
-                      borderRadius:7,
-                      padding:'7px 9px',
+                      borderRadius:9,
+                      padding:'10px 12px',
                     }}>
                       {/* Original driver — struck through if swapped */}
                       <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
                         <span style={{
                           fontWeight:600,
-                          fontSize:12,
+                          fontSize:15,
                           color: swap ? 'var(--dim)' : 'var(--text)',
                           lineHeight:1.3,
                           textDecoration: swap ? 'line-through' : 'none',
@@ -132,13 +132,13 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
                           }}>swap</span>
                         )}
                       </div>
-                      <div style={{ color:'var(--dim)', fontSize:11, marginTop:1 }}>
+                      <div style={{ color:'var(--dim)', fontSize:13, marginTop:2 }}>
                         #{pk.drivers?.car_number} · R{pk.round_number}
                       </div>
                       {/* Swap driver shown below */}
                       {swap && (
                         <div style={{ marginTop:5, paddingTop:5, borderTop:'1px solid rgba(99,102,241,0.2)' }}>
-                          <div style={{ fontWeight:600, fontSize:12, color:'#a5b4fc', lineHeight:1.3 }}>
+                          <div style={{ fontWeight:600, fontSize:15, color:'#a5b4fc', lineHeight:1.3 }}>
                             {swap.swap_driver?.driver_name}
                           </div>
                           <div style={{ color:'rgba(165,180,252,0.6)', fontSize:11, marginTop:1 }}>
@@ -154,11 +154,11 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
               {session && Array.from({ length: (session.total_rounds||0) - (teamMap[p.player_id]?.length||0) }).map((_,j)=>(
                 <div key={j} style={{
                   border:'1px dashed var(--border)',
-                  borderRadius:7,
-                  padding:'7px 9px',
+                  borderRadius:9,
+                  padding:'10px 12px',
                   textAlign:'center',
                   color:'var(--dim)',
-                  fontSize:11,
+                  fontSize:13,
                 }}>
                   Round {(teamMap[p.player_id]?.length||0)+j+1}
                 </div>
