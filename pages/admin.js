@@ -158,7 +158,7 @@ function AdminPanel() {
   const [fail,    setFail]    = useState('')
 
   async function loadAll() {
-    const { data: s } = await supabase.from('seasons').select('*').eq('is_active',true).single()
+    const { data: s } = await supabase.from('seasons').select('*').single()
     setSeason(s)
     if (s) {
       const { data: pl }   = await supabase.from('players').select('*').eq('season_id',s.season_id).order('draft_position')
@@ -167,7 +167,7 @@ function AdminPanel() {
       setPlayers(pl||[]); setSession(sess); setRaces(r||[])
     }
     const { data: drv } = s
-      ? await supabase.from('drivers').select('*').eq('season_id', s.season_id).eq('is_active',true).order('car_number')
+      ? await supabase.from('drivers').select('*').eq('season_id', s.season_id).order('car_number')
       : { data: [] }
     setDrivers(drv||[])
     setLoading(false)
@@ -225,7 +225,7 @@ function SetupTab({ season, players, session, reload, flash, boom }) {
 
   async function createSeason() {
     setBusy(true)
-    await supabase.from('seasons').update({is_active:false}).eq('is_active',true)
+    await supabase.from('seasons').update({is_active:false})
     const { error } = await supabase.from('seasons').insert({ season_year:year, season_name:name, is_active:true })
     setBusy(false)
     if (error) { boom(error.message); return }
@@ -504,7 +504,6 @@ function DriversTab({ season, drivers, reload, flash, boom }) {
       driver_name: name,
       car_number:  num || null,
       team:        team || null,
-      is_active:   true,
     })
     setBusy(false)
     if (error) { boom(error.message); return }
@@ -533,7 +532,6 @@ function DriversTab({ season, drivers, reload, flash, boom }) {
       driver_name: d.driver_name,
       car_number:  d.car_number,
       team:        d.team,
-      is_active:   true,
     }))
     const { error } = await supabase.from('drivers')
       .upsert(rows, { onConflict: 'season_id,driver_name' })

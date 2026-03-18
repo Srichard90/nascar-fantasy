@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS seasons (
   season_id   SERIAL PRIMARY KEY,
   season_year INT          NOT NULL UNIQUE,
   season_name VARCHAR(100) NOT NULL,
-  is_active   BOOLEAN      NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
@@ -22,7 +21,6 @@ CREATE TABLE IF NOT EXISTS drivers (
   driver_name VARCHAR(100) NOT NULL,
   car_number  VARCHAR(10),
   team        VARCHAR(150),
-  is_active   BOOLEAN      NOT NULL DEFAULT true,
   UNIQUE(season_id, driver_name)
 );
 
