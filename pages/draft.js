@@ -20,7 +20,7 @@ function Loader() {
 
 // ── Season toggle buttons (shared) ────────────────────────────
 function SeasonToggle({ allSeasons, seasonId, onSelect }) {
-  if (allSeasons.length <= 1) return null
+  if (!allSeasons || allSeasons.length <= 1) return null
   return (
     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
       <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>
@@ -60,10 +60,13 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
   picks.forEach(pk => { if (teamMap[pk.player_id]) teamMap[pk.player_id].push(pk) })
 
   // Index swaps by player_id -> original_driver_id for quick lookup
+  // Coerce to numbers to avoid string/int mismatch from Supabase
   const swapMap = {}
   swaps.forEach(sw => {
-    if (!swapMap[sw.player_id]) swapMap[sw.player_id] = {}
-    swapMap[sw.player_id][sw.original_driver_id] = sw
+    const pid = parseInt(sw.player_id, 10)
+    const did = parseInt(sw.original_driver_id, 10)
+    if (!swapMap[pid]) swapMap[pid] = {}
+    swapMap[pid][did] = sw
   })
 
   if (picks.length === 0) return (
@@ -95,7 +98,7 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
               {(teamMap[p.player_id]||[])
                 .sort((a,b)=>a.round_number-b.round_number)
                 .map(pk => {
-                  const swap = swapMap[p.player_id]?.[pk.driver_id]
+                  const swap = swapMap[parseInt(p.player_id,10)]?.[parseInt(pk.driver_id,10)]
                   return (
                     <div key={pk.draft_pick_id} style={{
                       background: swap ? 'rgba(99,102,241,0.08)' : 'var(--surface)',
@@ -355,7 +358,7 @@ export default function DraftPage() {
     if (e || !data?.success) setError(data?.error || e?.message || 'Pick failed.')
   }
 
-  const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
+  const isActiveSeason = (allSeasons || []).find(s => s.is_active)?.season_id === seasonId
   const totalPicks    = session?.total_drivers  || 20
   const totalPlayers  = session?.total_players  || 0
   const currentPick   = session?.current_pick_num || 1
