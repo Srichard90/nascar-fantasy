@@ -260,11 +260,7 @@ export default function StandingsPage() {
                       }}>
                         {row.adjusted_points}
                       </span>
-                      {row.wins > 0 && (
-                        <span style={{ color: 'var(--green)', fontSize: 11, marginLeft: 4, fontFamily: "'Barlow Condensed'", fontWeight: 700 }}>
-                          −{row.wins * 10}
-                        </span>
-                      )}
+
                     </td>
 
                     {/* Points behind leader */}
