@@ -2,29 +2,21 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Link from 'next/link'
 
-const S = {
-  card: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  th: {
-    padding: '12px 20px',
-    fontFamily: "'Barlow Condensed', sans-serif",
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
-    textAlign: 'left',
-    background: 'var(--surface2)',
-    borderBottom: '1px solid var(--border)',
-    whiteSpace: 'nowrap',
-  },
-}
-
 const MEDALS = ['🥇', '🥈', '🥉']
+
+const th = {
+  padding: '12px 16px',
+  fontFamily: "'Barlow Condensed', sans-serif",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+  color: 'var(--muted)',
+  textAlign: 'center',
+  background: 'var(--surface2)',
+  borderBottom: '1px solid var(--border)',
+  whiteSpace: 'nowrap',
+}
 
 export default function StandingsPage() {
   const [standings, setStandings] = useState([])
@@ -33,16 +25,47 @@ export default function StandingsPage() {
   const [loading,   setLoading]   = useState(true)
 
   async function fetchData() {
-    const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
+    const { data: s } = await supabase
+      .from('seasons').select('*').eq('is_active', true).single()
     setSeason(s)
     if (!s) { setLoading(false); return }
 
+    // Base standings from materialized table
     const { data: st } = await supabase
       .from('player_standings')
       .select('*, players(player_name)')
       .eq('season_id', s.season_id)
-      .order('total_points', { ascending: true })
-    setStandings(st || [])
+
+    // Count wins: drafted drivers who finished P1 in any race this season
+    const { data: winRows } = await supabase
+      .from('draft_picks')
+      .select('player_id, race_results!inner(finish_position), draft_sessions!inner(season_id)')
+      .eq('draft_sessions.season_id', s.season_id)
+      .eq('race_results.finish_position', 1)
+
+    const winsMap = {}
+    ;(winRows || []).forEach(r => {
+      winsMap[r.player_id] = (winsMap[r.player_id] || 0) + 1
+    })
+
+    // Enrich: add wins + adjusted_points (base minus 10 per win), then sort
+    const enriched = (st || [])
+      .map(row => ({
+        ...row,
+        wins:            winsMap[row.player_id] || 0,
+        adjusted_points: row.total_points - ((winsMap[row.player_id] || 0) * 10),
+      }))
+      .sort((a, b) => a.adjusted_points - b.adjusted_points)
+
+    // Gap columns
+    const leaderAdj = enriched.length ? enriched[0].adjusted_points : 0
+    const final = enriched.map((row, i) => ({
+      ...row,
+      pts_behind_leader: i === 0 ? null : row.adjusted_points - leaderAdj,
+      pts_behind_next:   i === 0 ? null : row.adjusted_points - enriched[i - 1].adjusted_points,
+    }))
+
+    setStandings(final)
 
     const { data: r } = await supabase
       .from('races')
@@ -113,30 +136,48 @@ export default function StandingsPage() {
         </div>
         <p style={{ color: 'var(--muted)', marginTop: 6, fontSize: 14 }}>
           Season standings &nbsp;·&nbsp;
-          <span style={{ color: 'var(--green)' }}>Lower points = better rank</span>
-          &nbsp;·&nbsp; Updates every 30 seconds
+          <span style={{ color: 'var(--green)' }}>Lower adjusted points = better rank</span>
+          &nbsp;·&nbsp;
+          <span style={{ color: 'var(--gold)' }}>Win bonus: −10 pts per driver win</span>
+          &nbsp;·&nbsp; Updates every 30 s
         </p>
       </div>
 
       {/* Standings table */}
       {standings.length === 0 ? (
-        <div style={{ ...S.card, padding: '60px 40px', textAlign: 'center' }}>
+        <div style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 14,
+          padding: '60px 40px',
+          textAlign: 'center',
+        }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
           <p style={{ color: 'var(--muted)', fontSize: 17 }}>
             Standings appear here after the first race results are entered.
           </p>
         </div>
       ) : (
-        <div style={{ ...S.card, marginBottom: 40 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 14,
+          overflow: 'hidden',
+          marginBottom: 40,
+          overflowX: 'auto',
+        }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
             <thead>
               <tr>
-                <th style={{ ...S.th, width: 60 }}>Rank</th>
-                <th style={{ ...S.th }}>Player</th>
-                <th style={{ ...S.th, textAlign: 'center' }}>Total Pts</th>
-                <th style={{ ...S.th, textAlign: 'center' }}>Races</th>
-                <th style={{ ...S.th, textAlign: 'center' }}>Best Wk</th>
-                <th style={{ ...S.th, textAlign: 'center' }}>Avg / Wk</th>
+                <th style={{ ...th, textAlign: 'left', width: 50 }}>Rank</th>
+                <th style={{ ...th, textAlign: 'left' }}>Player</th>
+                <th style={th}>Base Pts</th>
+                <th style={th}>Wins</th>
+                <th style={{ ...th, color: 'var(--gold)' }}>Adj. Pts</th>
+                <th style={th}>Races</th>
+                <th style={th}>Best Wk</th>
+                <th style={{ ...th, color: '#f87171' }}>− Leader</th>
+                <th style={{ ...th, color: '#fb923c' }}>− Next</th>
               </tr>
             </thead>
             <tbody>
@@ -146,17 +187,21 @@ export default function StandingsPage() {
                   <tr key={row.standing_id} style={{
                     borderTop: '1px solid var(--border)',
                     background: isFirst ? 'rgba(245,197,24,0.06)' : 'transparent',
-                    transition: 'background 0.15s',
                   }}>
-                    <td style={{ padding: '16px 20px', fontSize: 22 }}>
-                      {MEDALS[i] || <span style={{
-                        fontFamily: "'Barlow Condensed', sans-serif",
-                        fontWeight: 700,
-                        color: 'var(--dim)',
-                        fontSize: 16,
-                      }}>#{i + 1}</span>}
+                    {/* Rank */}
+                    <td style={{ padding: '14px 16px', fontSize: 22 }}>
+                      {MEDALS[i] || (
+                        <span style={{
+                          fontFamily: "'Barlow Condensed', sans-serif",
+                          fontWeight: 700,
+                          color: 'var(--dim)',
+                          fontSize: 16,
+                        }}>#{i + 1}</span>
+                      )}
                     </td>
-                    <td style={{ padding: '16px 20px' }}>
+
+                    {/* Player */}
+                    <td style={{ padding: '14px 16px' }}>
                       <span style={{
                         fontFamily: "'Barlow Condensed', sans-serif",
                         fontWeight: 700,
@@ -167,43 +212,112 @@ export default function StandingsPage() {
                         {row.players?.player_name}
                       </span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+
+                    {/* Base points */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center', color: 'var(--muted)', fontFamily: "'Barlow Condensed'", fontSize: 17 }}>
+                      {row.total_points}
+                    </td>
+
+                    {/* Wins */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      {row.wins > 0 ? (
+                        <span style={{
+                          background: 'rgba(245,197,24,0.15)',
+                          color: 'var(--gold)',
+                          borderRadius: 6,
+                          padding: '2px 10px',
+                          fontFamily: "'Barlow Condensed', sans-serif",
+                          fontWeight: 700,
+                          fontSize: 15,
+                        }}>
+                          🏆 {row.wins}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--dim)', fontSize: 14 }}>—</span>
+                      )}
+                    </td>
+
+                    {/* Adjusted points — primary ranking column */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                       <span style={{
                         fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: 28,
                         color: isFirst ? 'var(--gold)' : 'var(--text)',
                         letterSpacing: '0.05em',
                       }}>
-                        {row.total_points}
+                        {row.adjusted_points}
                       </span>
+                      {row.wins > 0 && (
+                        <span style={{ color: 'var(--green)', fontSize: 11, marginLeft: 4, fontFamily: "'Barlow Condensed'", fontWeight: 700 }}>
+                          −{row.wins * 10}
+                        </span>
+                      )}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 15 }}>
+
+                    {/* Races scored */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 15 }}>
                       {row.weeks_scored}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+
+                    {/* Best week */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                       <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: 15 }}>
                         {row.best_week ?? '—'}
                       </span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 15 }}>
-                      {row.weeks_scored > 0
-                        ? (row.total_points / row.weeks_scored).toFixed(1)
-                        : '—'}
+
+                    {/* Points behind leader */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      {row.pts_behind_leader === null ? (
+                        <span style={{ color: 'var(--gold)', fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 14, letterSpacing: '0.05em' }}>LEADER</span>
+                      ) : (
+                        <span style={{ color: '#f87171', fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 17 }}>
+                          +{row.pts_behind_leader}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Points behind next place ahead */}
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      {row.pts_behind_next === null ? (
+                        <span style={{ color: 'var(--dim)', fontSize: 13 }}>—</span>
+                      ) : (
+                        <span style={{ color: '#fb923c', fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 17 }}>
+                          +{row.pts_behind_next}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
+
+          {/* Legend */}
+          <div style={{
+            borderTop: '1px solid var(--border)',
+            padding: '10px 16px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px 24px',
+            fontSize: 12,
+            color: 'var(--dim)',
+            fontFamily: "'Barlow Condensed', sans-serif",
+            letterSpacing: '0.04em',
+          }}>
+            <span><span style={{ color: 'var(--gold)' }}>Adj. Pts</span> = Base Pts − (Wins × 10)</span>
+            <span><span style={{ color: '#f87171' }}>− Leader</span> = Adjusted points behind 1st place</span>
+            <span><span style={{ color: '#fb923c' }}>− Next</span> = Adjusted points behind the position directly ahead</span>
+          </div>
         </div>
       )}
 
       {/* Quick links */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
         {[
-          { href: '/draft',   icon: '🚗', title: 'Draft Room',     desc: 'Live snake draft'          },
-          { href: '/results', icon: '📊', title: 'Weekly Results', desc: 'Driver scores by race week' },
-          { href: '/admin',   icon: '⚙️', title: 'Admin Panel',    desc: 'Manage races & results'    },
+          { href: '/draft',   icon: '🚗', title: 'Draft Room',     desc: 'Live snake draft'           },
+          { href: '/results', icon: '📊', title: 'Weekly Results', desc: 'Driver scores by race week'  },
+          { href: '/admin',   icon: '⚙️', title: 'Admin Panel',    desc: 'Manage races & results'     },
         ].map(card => (
           <Link key={card.href} href={card.href} style={{
             textDecoration: 'none',
@@ -212,20 +326,14 @@ export default function StandingsPage() {
             borderRadius: 14,
             padding: '24px 20px',
             textAlign: 'center',
-            transition: 'border-color 0.15s, transform 0.15s',
             display: 'block',
+            transition: 'border-color 0.15s, transform 0.15s',
           }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--red)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)' }}
           >
             <div style={{ fontSize: 32, marginBottom: 10 }}>{card.icon}</div>
-            <div style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 22,
-              color: 'var(--text)',
-              letterSpacing: '0.06em',
-              marginBottom: 4,
-            }}>{card.title}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: 'var(--text)', letterSpacing: '0.06em', marginBottom: 4 }}>{card.title}</div>
             <div style={{ color: 'var(--muted)', fontSize: 13 }}>{card.desc}</div>
           </Link>
         ))}

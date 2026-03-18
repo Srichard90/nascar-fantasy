@@ -472,47 +472,50 @@ function RacesTab({ season, races, reload, flash, boom }) {
 
 // ── RESULTS TAB ────────────────────────────────────────────────
 function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
-  const [raceId,   setRaceId]   = useState('')
-  const [drafted,  setDrafted]  = useState([])
-  const [pos,      setPos]      = useState({})
-  const [dnf,      setDnf]      = useState({})
-  const [saving,   setSaving]   = useState(false)
+  const [raceId,  setRaceId]  = useState('')
+  const [pos,     setPos]     = useState({})
+  const [dnf,     setDnf]     = useState({})
+  const [saving,  setSaving]  = useState(false)
 
+  // Load existing results whenever a race is selected
   useEffect(() => {
-    if (!raceId || !session) return
+    if (!raceId) return
     async function load() {
-      const { data: picks } = await supabase
-        .from('draft_picks')
-        .select('driver_id, drivers(driver_name, car_number, team), players!inner(player_name)')
-        .eq('draft_session_id', session.draft_session_id)
-      setDrafted(picks||[])
-
-      const { data: existing } = await supabase.from('race_results').select('*').eq('race_id', parseInt(raceId,10))
-      const pm={}, dm={}
-      ;(existing||[]).forEach(r=>{ pm[r.driver_id]=r.finish_position; dm[r.driver_id]=r.dnf })
+      const { data: existing } = await supabase
+        .from('race_results').select('*').eq('race_id', parseInt(raceId, 10))
+      const pm = {}, dm = {}
+      ;(existing || []).forEach(r => { pm[r.driver_id] = r.finish_position; dm[r.driver_id] = r.dnf })
       setPos(pm); setDnf(dm)
     }
     load()
-  }, [raceId, session])
+  }, [raceId])
+
+  // All active drivers sorted by car number numerically
+  const sortedDrivers = [...(drivers || [])].sort((a, b) => {
+    const na = parseInt(a.car_number, 10)
+    const nb = parseInt(b.car_number, 10)
+    if (!isNaN(na) && !isNaN(nb)) return na - nb
+    return (a.car_number || '').localeCompare(b.car_number || '')
+  })
 
   async function save() {
     setSaving(true)
-    const rows = drafted
+    const rows = sortedDrivers
       .filter(d => pos[d.driver_id])
       .map(d => ({
-        race_id:         parseInt(raceId,10),
+        race_id:         parseInt(raceId, 10),
         driver_id:       d.driver_id,
-        finish_position: parseInt(pos[d.driver_id],10),
-        dnf:             dnf[d.driver_id]||false,
+        finish_position: parseInt(pos[d.driver_id], 10),
+        dnf:             dnf[d.driver_id] || false,
       }))
 
     if (!rows.length) { boom('Enter at least one finish position.'); setSaving(false); return }
 
-    const vals = rows.map(r=>r.finish_position)
-    if (new Set(vals).size !== vals.length) { boom('Two drivers can\'t share the same finish position.'); setSaving(false); return }
+    const vals = rows.map(r => r.finish_position)
+    if (new Set(vals).size !== vals.length) { boom("Two drivers can't share the same finish position."); setSaving(false); return }
 
-    const { error } = await supabase.from('race_results').upsert(rows, { onConflict:'race_id,driver_id' })
-    await supabase.from('races').update({ is_complete:true }).eq('race_id', raceId)
+    const { error } = await supabase.from('race_results').upsert(rows, { onConflict: 'race_id,driver_id' })
+    await supabase.from('races').update({ is_complete: true }).eq('race_id', raceId)
 
     setSaving(false)
     if (error) { boom(error.message); return }
@@ -520,76 +523,74 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
     reload()
   }
 
-  if (!season)  return <p style={{ color:'var(--muted)', fontSize:14 }}>Create a season first.</p>
-  if (!session) return <p style={{ color:'var(--muted)', fontSize:14 }}>Start the draft before entering results.</p>
-  if (!races.length) return <p style={{ color:'var(--muted)', fontSize:14 }}>Add races first (Races tab).</p>
+  if (!season)       return <p style={{ color: 'var(--muted)', fontSize: 14 }}>Create a season first.</p>
+  if (!races.length) return <p style={{ color: 'var(--muted)', fontSize: 14 }}>Add races first (Races tab).</p>
 
   return (
-    <div style={{ maxWidth:660, display:'flex', flexDirection:'column', gap:20 }}>
+    <div style={{ maxWidth: 660, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
         <label style={lbl}>Race</label>
         <select
           value={raceId}
-          onChange={e=>setRaceId(e.target.value)}
-          style={{ ...inp, maxWidth:420, width:'100%' }}
+          onChange={e => setRaceId(e.target.value)}
+          style={{ ...inp, maxWidth: 420, width: '100%' }}
         >
           <option value="">— select a race —</option>
-          {races.map(r=>(
+          {races.map(r => (
             <option key={r.race_id} value={r.race_id}>
-              Week {r.week_number} — {r.race_name} {r.is_complete?'✓':''}
+              Week {r.week_number} — {r.race_name} {r.is_complete ? '✓' : ''}
             </option>
           ))}
         </select>
       </div>
 
-      {raceId && drafted.length > 0 && (
+      {raceId && (
         <>
-          <p style={{ color:'var(--muted)', fontSize:13, margin:0 }}>
-            Enter the official finish position for each drafted driver. Leave blank if they didn't participate.
-            Standings update automatically when you save.
+          <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>
+            All {sortedDrivers.length} drivers listed by car number. Enter finish positions for drivers who raced.
+            Leave blank to skip. Standings update automatically on save.
           </p>
 
           {/* Column headers */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 160px 90px 60px', gap:'0 12px', borderBottom:'1px solid var(--border)', paddingBottom:8 }}>
-            {['Driver','Team','Finish','DNF'].map(h=>(
-              <span key={h} style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)' }}>{h}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 90px 60px', gap: '0 12px', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+            {['#', 'Driver', 'Finish', 'DNF'].map(h => (
+              <span key={h} style={{ fontFamily: "'Barlow Condensed'", fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)' }}>{h}</span>
             ))}
           </div>
 
           {/* Driver rows */}
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {[...drafted].sort((a,b)=>a.drivers.driver_name.localeCompare(b.drivers.driver_name)).map(d=>(
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {sortedDrivers.map(d => (
               <div key={d.driver_id} style={{
-                display:'grid',
-                gridTemplateColumns:'1fr 160px 90px 60px',
-                gap:'0 12px',
-                alignItems:'center',
-                background:'var(--bg)',
-                border:'1px solid var(--border)',
-                borderRadius:9,
-                padding:'9px 14px',
+                display: 'grid',
+                gridTemplateColumns: '60px 1fr 90px 60px',
+                gap: '0 12px',
+                alignItems: 'center',
+                background: pos[d.driver_id] ? 'rgba(245,197,24,0.05)' : 'var(--bg)',
+                border: `1px solid ${pos[d.driver_id] ? 'var(--border2)' : 'var(--border)'}`,
+                borderRadius: 9,
+                padding: '8px 14px',
               }}>
-                <div>
-                  <span style={{ fontWeight:600, color:'var(--text)', fontSize:14 }}>{d.drivers.driver_name}</span>
-                  <span style={{ color:'var(--gold)', fontSize:12, marginLeft:6 }}>#{d.drivers.car_number}</span>
-                </div>
-                <span style={{ color:'var(--muted)', fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {d.drivers.team}
+                <span style={{ color: 'var(--gold)', fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 15 }}>
+                  #{d.car_number}
+                </span>
+                <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14 }}>
+                  {d.driver_name}
                 </span>
                 <input
                   type="number"
-                  min={1} max={40}
-                  value={pos[d.driver_id]||''}
-                  onChange={e=>setPos(prev=>({...prev,[d.driver_id]:e.target.value}))}
+                  min={1} max={43}
+                  value={pos[d.driver_id] || ''}
+                  onChange={e => setPos(prev => ({ ...prev, [d.driver_id]: e.target.value }))}
                   placeholder="—"
-                  style={{ ...inp, textAlign:'center', padding:'7px 8px', fontSize:15, fontWeight:700 }}
+                  style={{ ...inp, textAlign: 'center', padding: '7px 8px', fontSize: 15, fontWeight: 700 }}
                 />
-                <div style={{ display:'flex', justifyContent:'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
                   <input
                     type="checkbox"
-                    checked={dnf[d.driver_id]||false}
-                    onChange={e=>setDnf(prev=>({...prev,[d.driver_id]:e.target.checked}))}
-                    style={{ width:18, height:18, accentColor:'var(--red)', cursor:'pointer' }}
+                    checked={dnf[d.driver_id] || false}
+                    onChange={e => setDnf(prev => ({ ...prev, [d.driver_id]: e.target.checked }))}
+                    style={{ width: 18, height: 18, accentColor: 'var(--red)', cursor: 'pointer' }}
                   />
                 </div>
               </div>
@@ -597,15 +598,11 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
           </div>
 
           <div>
-            <button onClick={save} disabled={saving} style={{ ...btn('green'), opacity: saving ? 0.4 : 1, fontSize:15, padding:'12px 28px' }}>
+            <button onClick={save} disabled={saving} style={{ ...btn('green'), opacity: saving ? 0.4 : 1, fontSize: 15, padding: '12px 28px' }}>
               {saving ? 'Saving…' : '💾 Save All Results'}
             </button>
           </div>
         </>
-      )}
-
-      {raceId && !drafted.length && (
-        <p style={{ color:'var(--gold)', fontSize:14 }}>No draft picks found — complete the draft first.</p>
       )}
     </div>
   )
