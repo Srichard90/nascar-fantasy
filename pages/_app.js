@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 
 const NAV = [
-  { href: '/',      label: 'Standings', icon: '🏆' },
-  { href: '/draft', label: 'Draft',     icon: '🚗' },
-  { href: '/admin', label: 'Admin',     icon: '⚙️'  },
+  { href: '/',        label: 'Standings',     icon: '🏆' },
+  { href: '/detail',  label: 'Weekly Detail', icon: '📋' },
+  { href: '/draft',   label: 'Draft',         icon: '🚗' },
+  { href: '/admin',   label: 'Admin',         icon: '⚙️'  },
 ]
 
 export default function App({ Component, pageProps }) {
