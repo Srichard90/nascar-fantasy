@@ -43,7 +43,11 @@ export default function StandingsPage() {
       .eq('races.season_id', s.season_id)
       .eq('finish_position', 1)
 
-    const winnerDriverIds = new Set((p1Results || []).map(r => r.driver_id))
+    // Build a map of driver_id -> total wins (same driver can win multiple races)
+    const driverWinCount = {}
+    ;(p1Results || []).forEach(r => {
+      driverWinCount[r.driver_id] = (driverWinCount[r.driver_id] || 0) + 1
+    })
 
     // Step 2: find which players own those winning drivers
     const { data: allPicks } = await supabase
@@ -51,11 +55,11 @@ export default function StandingsPage() {
       .select('player_id, driver_id, draft_sessions!inner(season_id)')
       .eq('draft_sessions.season_id', s.season_id)
 
-    // Match: count how many P1 drivers each player owns
+    // Match: sum total wins per player across all their drivers
     const winsMap = {}
     ;(allPicks || []).forEach(pk => {
-      if (winnerDriverIds.has(pk.driver_id)) {
-        winsMap[pk.player_id] = (winsMap[pk.player_id] || 0) + 1
+      if (driverWinCount[pk.driver_id]) {
+        winsMap[pk.player_id] = (winsMap[pk.player_id] || 0) + driverWinCount[pk.driver_id]
       }
     })
 
