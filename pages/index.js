@@ -36,16 +36,27 @@ export default function StandingsPage() {
       .select('*, players(player_name)')
       .eq('season_id', s.season_id)
 
-    // Count wins: drafted drivers who finished P1 in any race this season
-    const { data: winRows } = await supabase
-      .from('draft_picks')
-      .select('player_id, race_results!inner(finish_position), draft_sessions!inner(season_id)')
-      .eq('draft_sessions.season_id', s.season_id)
-      .eq('race_results.finish_position', 1)
+    // Step 1: find all drivers who won (P1) in any race this season
+    const { data: p1Results } = await supabase
+      .from('race_results')
+      .select('driver_id, races!inner(season_id)')
+      .eq('races.season_id', s.season_id)
+      .eq('finish_position', 1)
 
+    const winnerDriverIds = new Set((p1Results || []).map(r => r.driver_id))
+
+    // Step 2: find which players own those winning drivers
+    const { data: allPicks } = await supabase
+      .from('draft_picks')
+      .select('player_id, driver_id, draft_sessions!inner(season_id)')
+      .eq('draft_sessions.season_id', s.season_id)
+
+    // Match: count how many P1 drivers each player owns
     const winsMap = {}
-    ;(winRows || []).forEach(r => {
-      winsMap[r.player_id] = (winsMap[r.player_id] || 0) + 1
+    ;(allPicks || []).forEach(pk => {
+      if (winnerDriverIds.has(pk.driver_id)) {
+        winsMap[pk.player_id] = (winsMap[pk.player_id] || 0) + 1
+      }
     })
 
     // Enrich: add wins + adjusted_points (base minus 10 per win), then sort
