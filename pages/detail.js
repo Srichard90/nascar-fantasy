@@ -35,57 +35,78 @@ export default function WeeklyDetailPage() {
 
   // Load data whenever season changes
   useEffect(() => {
-    if (!seasonId || !allSeasons.length) return
+    if (!seasonId) return
     const s = allSeasons.find(x => x.season_id === seasonId)
     setSeason(s || null)
     setDataLoad(true)
+    setDrivers([])
+    setRaces([])
+    setResultMap({})
+
+    let cancelled = false
 
     async function load() {
-      // Drivers sorted by car number numerically
-      const { data: drv } = await supabase
-        .from('drivers')
-        .select('driver_id, driver_name, car_number, team')
-        .eq('season_id', seasonId)
+      try {
+        // 1. Fetch drivers
+        const { data: drv, error: drvErr } = await supabase
+          .from('drivers')
+          .select('driver_id, driver_name, car_number, team')
+          .eq('season_id', seasonId)
+        if (cancelled) return
+        if (drvErr) throw drvErr
 
-      const sorted = (drv || []).sort((a, b) => {
-        const na = parseInt(a.car_number, 10)
-        const nb = parseInt(b.car_number, 10)
-        if (!isNaN(na) && !isNaN(nb)) return na - nb
-        return (a.car_number || '').localeCompare(b.car_number || '')
-      })
-      setDrivers(sorted)
-
-      // Completed races sorted by week number
-      const { data: raceData } = await supabase
-        .from('races')
-        .select('race_id, week_number, race_name, track_name')
-        .eq('season_id', seasonId)
-        .eq('is_complete', true)
-        .order('week_number', { ascending: true })
-      setRaces(raceData || [])
-
-      // All results for this season's completed races
-      if (raceData && raceData.length) {
-        const raceIds = raceData.map(r => r.race_id)
-        const { data: results } = await supabase
-          .from('race_results')
-          .select('race_id, driver_id, finish_position, dnf')
-          .in('race_id', raceIds)
-
-        // Build map: race_id -> driver_id -> { finish_position, dnf }
-        const rm = {}
-        ;(results || []).forEach(r => {
-          if (!rm[r.race_id]) rm[r.race_id] = {}
-          rm[r.race_id][r.driver_id] = { pos: r.finish_position, dnf: r.dnf }
+        const sorted = (drv || []).sort((a, b) => {
+          const na = parseInt(a.car_number, 10)
+          const nb = parseInt(b.car_number, 10)
+          if (!isNaN(na) && !isNaN(nb)) return na - nb
+          return (a.car_number || '').localeCompare(b.car_number || '')
         })
-        setResultMap(rm)
-      }
+        setDrivers(sorted)
 
-      setDataLoad(false)
-      setLoading(false)
+        // 2. Fetch completed races
+        const { data: raceData, error: raceErr } = await supabase
+          .from('races')
+          .select('race_id, week_number, race_name, track_name')
+          .eq('season_id', seasonId)
+          .eq('is_complete', true)
+          .order('week_number', { ascending: true })
+        if (cancelled) return
+        if (raceErr) throw raceErr
+        setRaces(raceData || [])
+
+        // 3. Fetch results race-by-race to avoid .in() partial failures
+        if (raceData && raceData.length) {
+          const rm = {}
+
+          // Fetch all in parallel then merge
+          await Promise.all(raceData.map(async race => {
+            const { data: res, error: resErr } = await supabase
+              .from('race_results')
+              .select('driver_id, finish_position, dnf')
+              .eq('race_id', race.race_id)
+            if (cancelled) return
+            if (resErr) return // skip failed race silently
+            rm[race.race_id] = {}
+            ;(res || []).forEach(r => {
+              rm[race.race_id][r.driver_id] = { pos: r.finish_position, dnf: r.dnf }
+            })
+          }))
+
+          if (!cancelled) setResultMap({ ...rm })
+        }
+      } catch (err) {
+        console.error('Weekly detail load error:', err)
+      } finally {
+        if (!cancelled) {
+          setDataLoad(false)
+          setLoading(false)
+        }
+      }
     }
+
     load()
-  }, [seasonId, allSeasons])
+    return () => { cancelled = true }
+  }, [seasonId])
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
 
