@@ -158,7 +158,7 @@ function AdminPanel() {
   const [fail,    setFail]    = useState('')
 
   async function loadAll() {
-    const { data: s } = await supabase.from('seasons').select('*').single()
+    const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
     setSeason(s)
     if (s) {
       const { data: pl }   = await supabase.from('players').select('*').eq('season_id',s.season_id).order('draft_position')
