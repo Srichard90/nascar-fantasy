@@ -197,6 +197,7 @@ function AdminPanel() {
         <Tab label="🚗 Drivers"  active={tab==='drivers'} onClick={()=>setTab('drivers')} />
         <Tab label="🏎️ Races"   active={tab==='races'}   onClick={()=>setTab('races')} />
         <Tab label="🔄 Subs"    active={tab==='subs'}    onClick={()=>setTab('subs')} />
+        <Tab label="🔀 Swaps"   active={tab==='swaps'}   onClick={()=>setTab('swaps')} />
         <Tab label="📋 Results" active={tab==='results'} onClick={()=>setTab('results')} />
       </div>
 
@@ -211,6 +212,7 @@ function AdminPanel() {
         {tab==='drivers' && <DriversTab season={season} drivers={drivers} reload={loadAll} flash={flash} boom={boom} />}
         {tab==='races'   && <RacesTab   season={season} races={races}     reload={loadAll} flash={flash} boom={boom} />}
         {tab==='subs'    && <SubsTab    season={season} players={players} drivers={drivers} races={races} reload={loadAll} flash={flash} boom={boom} />}
+        {tab==='swaps'   && <SwapsTab   season={season} players={players} drivers={drivers} races={races} reload={loadAll} flash={flash} boom={boom} />}
         {tab==='results' && <ResultsTab season={season} races={races} drivers={drivers} session={session} reload={loadAll} flash={flash} boom={boom} />}
       </div>
     </div>
@@ -956,6 +958,254 @@ function SubsTab({ season, players, drivers, races, reload, flash, boom }) {
           </div>
         </section>
       )}
+    </div>
+  )
+}
+
+
+// ── SWAPS TAB ──────────────────────────────────────────────────
+function SwapsTab({ season, players, drivers, races, reload, flash, boom }) {
+  const [swaps,      setSwaps]      = useState([])
+  const [player,     setPlayer]     = useState('')
+  const [origDriver, setOrigDriver] = useState('')
+  const [swapDriver, setSwapDriver] = useState('')
+  const [startWeek,  setStartWeek]  = useState('')
+  const [notes,      setNotes]      = useState('')
+  const [busy,       setBusy]       = useState(false)
+
+  const completedWeeks = [...races]
+    .filter(r => r.is_complete)
+    .sort((a, b) => a.week_number - b.week_number)
+
+  const nextWeek = completedWeeks.length
+    ? completedWeeks[completedWeeks.length - 1].week_number
+    : 1
+
+  async function loadSwaps() {
+    if (!season) return
+    const { data } = await supabase
+      .from('driver_swaps')
+      .select(`
+        *,
+        players(player_name),
+        original_driver:drivers!driver_swaps_original_driver_id_fkey(driver_name, car_number),
+        swap_driver:drivers!driver_swaps_swap_driver_id_fkey(driver_name, car_number)
+      `)
+      .eq('season_id', season.season_id)
+      .order('created_at', { ascending: false })
+    setSwaps(data || [])
+  }
+
+  useEffect(() => { loadSwaps() }, [season])
+
+  // Players who have already used their swap this season
+  const usedSwapPlayerIds = new Set(swaps.map(s => s.player_id))
+
+  const sortedDrivers = [...(drivers || [])].sort((a, b) => {
+    const na = parseInt(a.car_number, 10), nb = parseInt(b.car_number, 10)
+    if (!isNaN(na) && !isNaN(nb)) return na - nb
+    return (a.car_number || '').localeCompare(b.car_number || '')
+  })
+
+  async function addSwap() {
+    if (!player || !origDriver || !swapDriver) { boom('Fill in all fields.'); return }
+    if (origDriver === swapDriver) { boom('Select two different drivers.'); return }
+    if (usedSwapPlayerIds.has(parseInt(player, 10))) {
+      boom(`${players.find(p=>p.player_id===parseInt(player,10))?.player_name} has already used their swap this season.`)
+      return
+    }
+    setBusy(true)
+    const { error } = await supabase.from('driver_swaps').insert({
+      season_id:          season.season_id,
+      player_id:          parseInt(player, 10),
+      original_driver_id: parseInt(origDriver, 10),
+      swap_driver_id:     parseInt(swapDriver, 10),
+      start_week:         parseInt(startWeek || nextWeek, 10),
+      notes:              notes || null,
+    })
+    setBusy(false)
+    if (error) { boom(error.message); return }
+    setPlayer(''); setOrigDriver(''); setSwapDriver(''); setStartWeek(''); setNotes('')
+    flash('Swap recorded! Re-save affected race results to update scores.')
+    loadSwaps()
+    reload()
+  }
+
+  async function deleteSwap(swapId) {
+    await supabase.from('driver_swaps').delete().eq('swap_id', swapId)
+    flash('Swap removed. Re-save affected race results to update scores.')
+    loadSwaps()
+    reload()
+  }
+
+  if (!season) return <p style={{ color:'var(--muted)', fontSize:14 }}>Create a season first.</p>
+
+  const availablePlayers = players.filter(p => !usedSwapPlayerIds.has(p.player_id))
+
+  return (
+    <div style={{ maxWidth:640, display:'flex', flexDirection:'column', gap:32 }}>
+
+      {/* Explainer */}
+      <div style={{ background:'rgba(99,102,241,0.08)', border:'1px solid rgba(99,102,241,0.25)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--muted)', lineHeight:1.6 }}>
+        <strong style={{ color:'#a5b4fc' }}>Driver Swap:</strong> Each player may permanently swap out one drafted
+        driver once per season. From the chosen week onward, the new driver&apos;s finish positions
+        score in place of the original. Unlike an injury sub, this cannot be reversed.
+      </div>
+
+      {/* Add swap form */}
+      <section>
+        <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 16px' }}>Record Swap</h3>
+
+        {availablePlayers.length === 0 ? (
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'20px', textAlign:'center', color:'var(--dim)', fontSize:14 }}>
+            All players have used their swap for this season.
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            <div>
+              <label style={lbl}>Player</label>
+              <select value={player} onChange={e=>setPlayer(e.target.value)} style={inp}>
+                <option value="">— select player —</option>
+                {availablePlayers.map(p=>(
+                  <option key={p.player_id} value={p.player_id}>{p.player_name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              <div>
+                <label style={lbl}>Drop Driver</label>
+                <select value={origDriver} onChange={e=>setOrigDriver(e.target.value)} style={inp}>
+                  <option value="">— select driver —</option>
+                  {sortedDrivers.map(d=>(
+                    <option key={d.driver_id} value={d.driver_id}>#{d.car_number} {d.driver_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={lbl}>Add Driver</label>
+                <select value={swapDriver} onChange={e=>setSwapDriver(e.target.value)} style={inp}>
+                  <option value="">— select driver —</option>
+                  {sortedDrivers.filter(d=>d.driver_id !== parseInt(origDriver,10)).map(d=>(
+                    <option key={d.driver_id} value={d.driver_id}>#{d.car_number} {d.driver_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'120px 1fr', gap:12 }}>
+              <div>
+                <label style={lbl}>Effective Week</label>
+                <input
+                  type="number" min={1}
+                  value={startWeek || nextWeek}
+                  onChange={e=>setStartWeek(e.target.value)}
+                  style={inp}
+                />
+              </div>
+              <div>
+                <label style={lbl}>Notes (optional)</label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={e=>setNotes(e.target.value)}
+                  placeholder="e.g. Tom drops Harvick, picks up Logano"
+                  style={inp}
+                />
+              </div>
+            </div>
+
+            <div>
+              <button
+                onClick={addSwap}
+                disabled={busy || !player || !origDriver || !swapDriver}
+                style={{ ...btn('red'), opacity: busy || !player || !origDriver || !swapDriver ? 0.4 : 1 }}
+              >
+                Record Swap
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Swap history */}
+      <section>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:12 }}>
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:0 }}>Season Swaps</h3>
+          <span style={{ color:'var(--muted)', fontSize:13 }}>
+            {swaps.length} of {players.length} used
+          </span>
+        </div>
+
+        {/* Used / remaining at a glance */}
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:16 }}>
+          {players.map(p => {
+            const used = usedSwapPlayerIds.has(p.player_id)
+            return (
+              <span key={p.player_id} style={{
+                padding:'4px 12px',
+                borderRadius:99,
+                border: `2px solid ${used ? 'rgba(99,102,241,0.5)' : 'var(--border2)'}`,
+                background: used ? 'rgba(99,102,241,0.12)' : 'transparent',
+                color: used ? '#a5b4fc' : 'var(--dim)',
+                fontFamily:"'Barlow Condensed', sans-serif",
+                fontSize:13,
+                fontWeight:700,
+                letterSpacing:'0.04em',
+              }}>
+                {used ? '✓ ' : ''}{p.player_name}
+              </span>
+            )
+          })}
+        </div>
+
+        {swaps.length === 0 ? (
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'20px', textAlign:'center', color:'var(--dim)', fontSize:14 }}>
+            No swaps recorded this season.
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {swaps.map(s => (
+              <div key={s.swap_id} style={{
+                background:'rgba(99,102,241,0.06)',
+                border:'1px solid rgba(99,102,241,0.25)',
+                borderRadius:10,
+                padding:'14px 16px',
+                display:'flex',
+                justifyContent:'space-between',
+                alignItems:'center',
+                gap:12,
+                flexWrap:'wrap',
+              }}>
+                <div>
+                  <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:18, color:'var(--text)', marginBottom:4 }}>
+                    {s.players?.player_name}
+                    <span style={{ color:'var(--dim)', fontWeight:400, fontSize:14, marginLeft:8 }}>from Week {s.start_week}</span>
+                  </div>
+                  <div style={{ fontSize:14, color:'var(--muted)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <span style={{ color:'#f87171' }}>
+                      #{s.original_driver?.car_number} {s.original_driver?.driver_name}
+                    </span>
+                    <span style={{ color:'var(--dim)' }}>→</span>
+                    <span style={{ color:'#a5b4fc' }}>
+                      #{s.swap_driver?.car_number} {s.swap_driver?.driver_name}
+                    </span>
+                  </div>
+                  {s.notes && (
+                    <div style={{ fontSize:12, color:'var(--dim)', marginTop:4, fontStyle:'italic' }}>{s.notes}</div>
+                  )}
+                </div>
+                <button
+                  onClick={() => deleteSwap(s.swap_id)}
+                  style={{ background:'transparent', border:'1px solid var(--border2)', borderRadius:7, padding:'6px 12px', color:'var(--red)', fontSize:12, cursor:'pointer', fontFamily:"'Barlow Condensed'", fontWeight:700, letterSpacing:'0.05em', whiteSpace:'nowrap', flexShrink:0 }}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
