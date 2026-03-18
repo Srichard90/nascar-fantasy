@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import Link from 'next/link'
 
@@ -194,9 +194,14 @@ export default function StandingsPage() {
 
     setWeekData(pd)
     setWeekLoad(false)
+    // Restore scroll position after data loads
+    requestAnimationFrame(() => window.scrollTo({ top: scrollRef.current, behavior: 'instant' }))
   }, [raceId, seasonId, races])
 
   useEffect(() => { fetchWeek() }, [fetchWeek])
+
+  // Preserve scroll position when changing race week
+  const scrollRef = useRef(0)
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
   const race           = races.find(r => r.race_id === raceId)
@@ -352,7 +357,7 @@ export default function StandingsPage() {
                 <label style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Race:</label>
                 <select
                   value={raceId || ''}
-                  onChange={e => setRaceId(parseInt(e.target.value, 10))}
+                  onChange={e => { scrollRef.current = window.scrollY; setRaceId(parseInt(e.target.value, 10)) }}
                   style={{ background:'var(--surface)', border:'1px solid var(--border2)', borderRadius:8, padding:'9px 14px', color:'var(--text)', fontSize:14, fontFamily:"'Barlow', sans-serif", outline:'none', cursor:'pointer', maxWidth:'100%' }}
                 >
                   {races.map(r => (
