@@ -53,27 +53,62 @@ export default function StandingsPage() {
       .select('*, players(player_name)')
       .eq('season_id', sid)
 
+    // Fetch P1 results with the week number so we can apply swap/sub logic
     const { data: p1Results } = await supabase
       .from('race_results')
-      .select('driver_id, races!inner(season_id)')
+      .select('driver_id, races!inner(season_id, week_number, race_id)')
       .eq('races.season_id', sid)
       .eq('finish_position', 1)
 
-    const driverWinCount = {}
-    ;(p1Results || []).forEach(r => {
-      driverWinCount[r.driver_id] = (driverWinCount[r.driver_id] || 0) + 1
-    })
-
+    // Fetch draft picks for this season
     const { data: allPicks } = await supabase
       .from('draft_picks')
       .select('player_id, driver_id, draft_sessions!inner(season_id)')
       .eq('draft_sessions.season_id', sid)
 
+    // Fetch swaps and subs so wins are only counted when the driver
+    // was actually active for that player in that week
+    const { data: swaps } = await supabase
+      .from('driver_swaps').select('*').eq('season_id', sid)
+    const { data: subs } = await supabase
+      .from('driver_substitutions').select('*').eq('season_id', sid)
+
+    // For each P1 result, determine which player (if any) gets credit
+    // by resolving the effective driver for that player/week — same logic as trigger
     const winsMap = {}
-    ;(allPicks || []).forEach(pk => {
-      if (driverWinCount[pk.driver_id]) {
-        winsMap[pk.player_id] = (winsMap[pk.player_id] || 0) + driverWinCount[pk.driver_id]
-      }
+    ;(p1Results || []).forEach(win => {
+      const winDriverId = win.driver_id
+      const weekNumber  = win.races?.week_number
+
+      ;(allPicks || []).forEach(pk => {
+        const playerId     = pk.player_id
+        const draftedDriver = pk.driver_id
+
+        // Resolve effective driver for this player/pick in this week
+        const swap = (swaps || []).find(s =>
+          s.player_id          === playerId &&
+          s.original_driver_id === draftedDriver &&
+          s.start_week         <= weekNumber
+        )
+
+        const sub = !swap && (subs || []).find(s =>
+          s.player_id          === playerId &&
+          s.original_driver_id === draftedDriver &&
+          s.start_week         <= weekNumber &&
+          (s.end_week === null || s.end_week >= weekNumber)
+        )
+
+        const effectiveDriverId = swap
+          ? swap.swap_driver_id
+          : sub
+          ? sub.sub_driver_id
+          : draftedDriver
+
+        // Credit the win only if this player's effective driver for this week won
+        if (effectiveDriverId === winDriverId) {
+          winsMap[playerId] = (winsMap[playerId] || 0) + 1
+        }
+      })
     })
 
     const enriched = (st || [])
