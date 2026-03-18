@@ -166,7 +166,9 @@ function AdminPanel() {
       const { data: r }    = await supabase.from('races').select('*').eq('season_id',s.season_id).order('week_number')
       setPlayers(pl||[]); setSession(sess); setRaces(r||[])
     }
-    const { data: drv } = await supabase.from('drivers').select('*').eq('is_active',true).order('driver_name')
+    const { data: drv } = s
+      ? await supabase.from('drivers').select('*').eq('season_id', s.season_id).eq('is_active',true).order('car_number')
+      : { data: [] }
     setDrivers(drv||[])
     setLoading(false)
   }
@@ -192,6 +194,7 @@ function AdminPanel() {
       {/* Tabs */}
       <div style={{ display:'flex', borderBottom:'1px solid var(--border)', marginBottom:0, overflowX:'auto' }}>
         <Tab label="⚙️ Setup"    active={tab==='setup'}   onClick={()=>setTab('setup')} />
+        <Tab label="🚗 Drivers"  active={tab==='drivers'} onClick={()=>setTab('drivers')} />
         <Tab label="🏎️ Races"   active={tab==='races'}   onClick={()=>setTab('races')} />
         <Tab label="📋 Results" active={tab==='results'} onClick={()=>setTab('results')} />
       </div>
@@ -204,6 +207,7 @@ function AdminPanel() {
         padding: '28px 28px',
       }}>
         {tab==='setup'   && <SetupTab   season={season} players={players} session={session} reload={loadAll} flash={flash} boom={boom} />}
+        {tab==='drivers' && <DriversTab season={season} drivers={drivers} reload={loadAll} flash={flash} boom={boom} />}
         {tab==='races'   && <RacesTab   season={season} races={races}     reload={loadAll} flash={flash} boom={boom} />}
         {tab==='results' && <ResultsTab season={season} races={races} drivers={drivers} session={session} reload={loadAll} flash={flash} boom={boom} />}
       </div>
@@ -466,6 +470,185 @@ function RacesTab({ season, races, reload, flash, boom }) {
           </div>
         </section>
       )}
+    </div>
+  )
+}
+
+
+// ── DRIVERS TAB ────────────────────────────────────────────────
+function DriversTab({ season, drivers, reload, flash, boom }) {
+  const [num,    setNum]    = useState('')
+  const [name,   setName]   = useState('')
+  const [team,   setTeam]   = useState('')
+  const [busy,   setBusy]   = useState(false)
+  const [copyBusy, setCopyBusy] = useState(false)
+  const [prevSeasons, setPrevSeasons] = useState([])
+  const [copyFrom,    setCopyFrom]    = useState('')
+
+  // Load previous (inactive) seasons for copy-forward
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from('seasons').select('season_id, season_name, season_year')
+        .eq('is_active', false).order('season_year', { ascending: false })
+      setPrevSeasons(data || [])
+    }
+    load()
+  }, [])
+
+  async function addDriver() {
+    if (!season) return
+    setBusy(true)
+    const { error } = await supabase.from('drivers').insert({
+      season_id:   season.season_id,
+      driver_name: name,
+      car_number:  num || null,
+      team:        team || null,
+      is_active:   true,
+    })
+    setBusy(false)
+    if (error) { boom(error.message); return }
+    setNum(''); setName(''); setTeam('')
+    flash(`Driver "${name}" added!`)
+    reload()
+  }
+
+  async function removeDriver(driverId) {
+    await supabase.from('drivers').delete().eq('driver_id', driverId)
+    flash('Driver removed.')
+    reload()
+  }
+
+  async function copyFromSeason() {
+    if (!copyFrom || !season) return
+    setCopyBusy(true)
+    const { data: srcDrivers } = await supabase
+      .from('drivers').select('driver_name, car_number, team')
+      .eq('season_id', parseInt(copyFrom, 10))
+    if (!srcDrivers || !srcDrivers.length) {
+      boom('No drivers found in that season.'); setCopyBusy(false); return
+    }
+    const rows = srcDrivers.map(d => ({
+      season_id:   season.season_id,
+      driver_name: d.driver_name,
+      car_number:  d.car_number,
+      team:        d.team,
+      is_active:   true,
+    }))
+    const { error } = await supabase.from('drivers')
+      .upsert(rows, { onConflict: 'season_id,driver_name' })
+    setCopyBusy(false)
+    if (error) { boom(error.message); return }
+    flash(`Copied ${rows.length} drivers from previous season!`)
+    reload()
+  }
+
+  // Sort by car number numerically
+  const sorted = [...(drivers || [])].sort((a, b) => {
+    const na = parseInt(a.car_number, 10), nb = parseInt(b.car_number, 10)
+    if (!isNaN(na) && !isNaN(nb)) return na - nb
+    return (a.car_number || '').localeCompare(b.car_number || '')
+  })
+
+  if (!season) return <p style={{ color:'var(--muted)', fontSize:14 }}>Create a season first (Setup tab).</p>
+
+  return (
+    <div style={{ maxWidth:620, display:'flex', flexDirection:'column', gap:28 }}>
+
+      {/* Copy from previous season */}
+      {prevSeasons.length > 0 && (
+        <section>
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 6px' }}>Copy From Previous Season</h3>
+          <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 12px' }}>
+            Import all drivers from a past season as a starting point, then add or remove as needed.
+          </p>
+          <div style={{ display:'flex', gap:10, alignItems:'flex-end', flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:200 }}>
+              <label style={lbl}>Previous Season</label>
+              <select value={copyFrom} onChange={e=>setCopyFrom(e.target.value)} style={{ ...inp }}>
+                <option value="">— choose a season —</option>
+                {prevSeasons.map(s=>(
+                  <option key={s.season_id} value={s.season_id}>
+                    {s.season_name} ({s.season_year})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={copyFromSeason}
+              disabled={!copyFrom || copyBusy}
+              style={{ ...btn('ghost'), opacity: !copyFrom || copyBusy ? 0.4 : 1, flexShrink:0 }}
+            >
+              {copyBusy ? 'Copying…' : '📋 Copy Drivers'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Add single driver */}
+      <section>
+        <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 14px' }}>Add Driver</h3>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'80px 1fr', gap:12 }}>
+            <div>
+              <label style={lbl}>Car #</label>
+              <input type="text" value={num} onChange={e=>setNum(e.target.value)} placeholder="5" style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Driver Name *</label>
+              <input type="text" value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Kyle Larson" style={inp} />
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Team</label>
+            <input type="text" value={team} onChange={e=>setTeam(e.target.value)} placeholder="e.g. Hendrick Motorsports" style={inp} />
+          </div>
+          <div>
+            <button onClick={addDriver} disabled={busy || !name} style={{ ...btn('red'), opacity: busy || !name ? 0.4 : 1 }}>
+              Add Driver
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Current driver roster */}
+      <section>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:12 }}>
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:0 }}>
+            {season.season_name} Drivers
+          </h3>
+          <span style={{ color:'var(--muted)', fontSize:13 }}>{sorted.length} drivers</span>
+        </div>
+
+        {sorted.length === 0 ? (
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'28px 20px', textAlign:'center', color:'var(--dim)', fontSize:14 }}>
+            No drivers yet. Add them above or copy from a previous season.
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {sorted.map(d => (
+              <div key={d.driver_id} style={{
+                display:'grid', gridTemplateColumns:'60px 1fr 1fr auto',
+                gap:'0 12px', alignItems:'center',
+                background:'var(--bg)', border:'1px solid var(--border)',
+                borderRadius:9, padding:'9px 14px',
+              }}>
+                <span style={{ color:'var(--gold)', fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:15 }}>
+                  #{d.car_number}
+                </span>
+                <span style={{ fontWeight:600, color:'var(--text)', fontSize:14 }}>{d.driver_name}</span>
+                <span style={{ color:'var(--muted)', fontSize:13, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.team || '—'}</span>
+                <button
+                  onClick={() => removeDriver(d.driver_id)}
+                  style={{ background:'transparent', border:'none', color:'var(--red)', fontSize:13, cursor:'pointer', fontFamily:"'Barlow Condensed'", fontWeight:700, letterSpacing:'0.05em', whiteSpace:'nowrap' }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
