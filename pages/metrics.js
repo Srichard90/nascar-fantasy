@@ -3,9 +3,10 @@ import { supabase } from '../lib/supabase'
 
 const PLAYER_COLORS = ['#3b82f6','#22c55e','#a855f7','#f97316','#ec4899']
 const METRICS = [
-  { id: 'bestworst',  label: 'Best & Worst Driver',       icon: '🏅' },
-  { id: 'draftperf',  label: 'Draft Performance',          icon: '🎯' },
-  { id: 'drafteff',   label: 'Draft Position Efficiency',  icon: '⚡' },
+  { id: 'bestworst',   label: 'Best & Worst Driver',       icon: '🏅' },
+  { id: 'draftperf',   label: 'Draft Performance',          icon: '🎯' },
+  { id: 'drafteff',    label: 'Draft Position Efficiency',  icon: '⚡' },
+  { id: 'available',   label: 'Available Drivers',          icon: '🚙' },
 ]
 
 // ── Shared cell style helpers ──────────────────────────────────
@@ -42,6 +43,9 @@ export default function MetricsPage() {
   const [driverTotals, setDriverTotals] = useState({}) // driver_id -> total finish pts (season)
   const [driverRanks,  setDriverRanks]  = useState({}) // driver_id -> rank among ALL drivers with results
   const [totalDriverCount, setTotalDriverCount] = useState(0)
+  const [allDrivers,   setAllDrivers]   = useState([]) // all drivers in the season
+  const [activeSubs,   setActiveSubs]   = useState([]) // currently active injury subs
+  const [allSwaps,     setAllSwaps]     = useState([]) // all permanent swaps
 
   // Load seasons
   useEffect(() => {
@@ -71,6 +75,24 @@ export default function MetricsPage() {
           .from('players').select('*')
           .eq('season_id', seasonId)
           .order('draft_position')
+
+        // Active subs and swaps (needed for Available Drivers metric)
+        const { data: activeSubs } = await supabase
+          .from('driver_substitutions')
+          .select('sub_driver_id, original_driver_id, player_id')
+          .eq('season_id', seasonId)
+          .is('end_week', null)  // only currently active subs
+
+        const { data: allSwaps } = await supabase
+          .from('driver_swaps')
+          .select('original_driver_id, swap_driver_id, player_id, start_week')
+          .eq('season_id', seasonId)
+
+        // All drivers for this season (for Available Drivers metric)
+        const { data: allDrivers } = await supabase
+          .from('drivers')
+          .select('driver_id, driver_name, car_number, team')
+          .eq('season_id', seasonId)
 
         // Draft session
         const { data: sess } = await supabase
@@ -125,6 +147,9 @@ export default function MetricsPage() {
         setPicks(pks || [])
         setDriverTotals(totals)
         setDriverRanks(ranks)
+        setAllDrivers(allDrivers || [])
+        setActiveSubs(activeSubs || [])
+        setAllSwaps(allSwaps || [])
         setTotalDriverCount(totalDriverCount)
       } catch (err) {
         console.error('Metrics load error:', err)
@@ -456,6 +481,99 @@ export default function MetricsPage() {
               </div>
             )
           })()}
+
+          {/* ── METRIC 4: Available Drivers ── */}
+          {metric === 'available' && (() => {
+            const draftedIds = new Set(picks.map(p => p.driver_id))
+            const subInIds   = new Set((activeSubs || []).map(s => s.sub_driver_id))
+            const swappedOutIds = new Set((allSwaps || []).map(s => s.original_driver_id))
+
+            // Unavailable = drafted and NOT swapped out, OR actively subbing in
+            const unavailableIds = new Set([
+              ...([...draftedIds].filter(id => !swappedOutIds.has(id))),
+              ...subInIds,
+            ])
+
+            // Global rank across ALL drivers
+            const allWithTotals = (allDrivers || [])
+              .filter(d => driverTotals[d.driver_id] !== undefined)
+              .map(d => ({ ...d, total: driverTotals[d.driver_id] }))
+              .sort((a, b) => a.total - b.total)
+            const allRankMap = {}
+            allWithTotals.forEach((d, i) => { allRankMap[d.driver_id] = i + 1 })
+
+            const available = (allDrivers || [])
+              .filter(d => !unavailableIds.has(d.driver_id))
+              .map(d => ({ ...d, total: driverTotals[d.driver_id] ?? null, rank: allRankMap[d.driver_id] ?? null }))
+              .sort((a, b) => {
+                if (a.total === null && b.total === null) return 0
+                if (a.total === null) return 1
+                if (b.total === null) return -1
+                return a.total - b.total
+              })
+
+            return (
+              <div>
+                <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Available Drivers</h2>
+                <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
+                  Undrafted drivers this season sorted by total accumulated finish points — lower is better.
+                  Drivers on active injury subs are excluded. Drivers permanently swapped out are shown as available.
+                  Rank is among all {(allDrivers||[]).length} drivers in the season.
+                </p>
+                {available.length === 0 ? (
+                  <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'40px', textAlign:'center' }}>
+                    <p style={{ color:'var(--muted)', fontSize:16 }}>All drivers have been drafted.</p>
+                  </div>
+                ) : (
+                  <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                      <thead>
+                        <tr style={{ background:'var(--surface2)' }}>
+                          {['Rank','#','Driver','Team','Season Total'].map((h, i) => (
+                            <th key={h} style={{
+                              padding:'12px 16px', borderBottom:'2px solid var(--border)',
+                              fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
+                              letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)',
+                              textAlign: i === 0 || i === 4 ? 'center' : 'left', whiteSpace:'nowrap',
+                            }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {available.map((d, i) => (
+                          <tr key={d.driver_id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
+                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:20, letterSpacing:'0.04em',
+                                color: d.rank && d.rank <= 5 ? 'var(--green)' : d.rank && d.rank <= 10 ? 'var(--gold)' : 'var(--muted)' }}>
+                                {d.rank ?? '—'}
+                              </span>
+                            </td>
+                            <td style={{ padding:'12px 16px' }}>
+                              <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:15, color:'var(--gold)' }}>
+                                #{d.car_number}
+                              </span>
+                            </td>
+                            <td style={{ padding:'12px 16px', fontWeight:600, fontSize:15, color:'var(--text)' }}>
+                              {d.driver_name}
+                            </td>
+                            <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
+                              {d.team || '—'}
+                            </td>
+                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
+                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--text)', letterSpacing:'0.04em' }}>
+                                {d.total ?? '—'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
         </>
       )}
     </div>

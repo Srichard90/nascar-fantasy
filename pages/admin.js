@@ -682,9 +682,10 @@ function SubsTab({ season, players, drivers, races, reload, flash, boom }) {
   const [notes,      setNotes]      = useState('')
   const [busy,       setBusy]       = useState(false)
 
-  const completedWeeks = [...races]
-    .filter(r => r.is_complete)
+  const allWeeks = [...races]
     .sort((a, b) => a.week_number - b.week_number)
+
+  const completedWeeks = allWeeks.filter(r => r.is_complete)
 
   const nextWeek = completedWeeks.length
     ? completedWeeks[completedWeeks.length - 1].week_number
@@ -901,7 +902,7 @@ function SubsTab({ season, players, drivers, races, reload, flash, boom }) {
                         style={{ ...inp, width:'auto', padding:'6px 10px', fontSize:13 }}
                       >
                         <option value="">— select —</option>
-                        {completedWeeks
+                        {allWeeks
                           .filter(r => r.week_number >= s.start_week)
                           .map(r => (
                             <option key={r.race_id} value={r.week_number}>
@@ -973,9 +974,10 @@ function SwapsTab({ season, players, drivers, races, reload, flash, boom }) {
   const [notes,      setNotes]      = useState('')
   const [busy,       setBusy]       = useState(false)
 
-  const completedWeeks = [...races]
-    .filter(r => r.is_complete)
+  const allWeeks = [...races]
     .sort((a, b) => a.week_number - b.week_number)
+
+  const completedWeeks = allWeeks.filter(r => r.is_complete)
 
   const nextWeek = completedWeeks.length
     ? completedWeeks[completedWeeks.length - 1].week_number
