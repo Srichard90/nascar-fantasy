@@ -18,40 +18,237 @@ function Loader() {
   )
 }
 
-function Empty({ icon, title, sub }) {
+// ── Season toggle buttons (shared) ────────────────────────────
+function SeasonToggle({ allSeasons, seasonId, onSelect }) {
+  if (allSeasons.length <= 1) return null
   return (
-    <div style={{ textAlign:'center', padding:'60px 20px' }}>
-      <div style={{ fontSize:52, marginBottom:12 }}>{icon}</div>
-      <h2 style={{ fontSize:28, color:'var(--text)', marginBottom:8 }}>{title}</h2>
-      <p style={{ color:'var(--muted)', fontSize:15 }}>{sub}</p>
+    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+      <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>
+        Season:
+      </span>
+      {[...allSeasons].sort((a, b) => b.season_year - a.season_year).map(s => (
+        <button key={s.season_id} onClick={() => onSelect(s.season_id)} style={{
+          padding: '6px 14px',
+          borderRadius: 8,
+          border: `2px solid ${seasonId === s.season_id ? 'var(--red)' : 'var(--border2)'}`,
+          background: seasonId === s.season_id ? 'rgba(232,25,44,0.12)' : 'transparent',
+          color: seasonId === s.season_id ? 'var(--text)' : 'var(--muted)',
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 700,
+          fontSize: 14,
+          letterSpacing: '0.05em',
+          cursor: 'pointer',
+          transition: 'all 0.15s',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          {s.season_year}
+          {s.is_active && (
+            <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--green)', display:'inline-block' }} />
+          )}
+        </button>
+      ))}
     </div>
   )
 }
 
+// ── Draft board (shared between live and historical) ──────────
+function DraftBoard({ players, picks, session }) {
+  const teamMap = {}
+  players.forEach(p => { teamMap[p.player_id] = [] })
+  picks.forEach(pk => { if (teamMap[pk.player_id]) teamMap[pk.player_id].push(pk) })
+
+  if (picks.length === 0) return (
+    <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
+      No picks yet.
+    </div>
+  )
+
+  return (
+    <div style={{ overflowX:'auto' }}>
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${players.length}, minmax(120px, 1fr))`, gap:10, minWidth: players.length * 130 }}>
+        {players.map((p, i) => (
+          <div key={p.player_id}>
+            <div style={{
+              textAlign:'center',
+              fontFamily:"'Barlow Condensed', sans-serif",
+              fontWeight:700,
+              fontSize:13,
+              letterSpacing:'0.06em',
+              textTransform:'uppercase',
+              color: PLAYER_COLORS[i%5],
+              borderBottom: `2px solid ${PLAYER_COLORS[i%5]}`,
+              paddingBottom:6,
+              marginBottom:8,
+            }}>
+              {p.player_name}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+              {(teamMap[p.player_id]||[])
+                .sort((a,b)=>a.round_number-b.round_number)
+                .map(pk=>(
+                  <div key={pk.draft_pick_id} style={{
+                    background:'var(--surface)',
+                    border:'1px solid var(--border)',
+                    borderRadius:7,
+                    padding:'7px 9px',
+                  }}>
+                    <div style={{ fontWeight:600, fontSize:12, color:'var(--text)', lineHeight:1.3 }}>
+                      {pk.drivers?.driver_name}
+                    </div>
+                    <div style={{ color:'var(--dim)', fontSize:11, marginTop:2 }}>
+                      #{pk.drivers?.car_number} · R{pk.round_number}
+                    </div>
+                  </div>
+                ))}
+              {/* Empty slots */}
+              {session && Array.from({ length: (session.total_rounds||0) - (teamMap[p.player_id]?.length||0) }).map((_,j)=>(
+                <div key={j} style={{
+                  border:'1px dashed var(--border)',
+                  borderRadius:7,
+                  padding:'7px 9px',
+                  textAlign:'center',
+                  color:'var(--dim)',
+                  fontSize:11,
+                }}>
+                  Round {(teamMap[p.player_id]?.length||0)+j+1}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Historical (read-only) draft view ─────────────────────────
+function HistoricalDraft({ season }) {
+  const [session,  setSession]  = useState(null)
+  const [players,  setPlayers]  = useState([])
+  const [picks,    setPicks]    = useState([])
+  const [loading,  setLoading]  = useState(true)
+
+  useEffect(() => {
+    if (!season) return
+    setLoading(true)
+    async function load() {
+      const { data: sess } = await supabase
+        .from('draft_sessions').select('*').eq('season_id', season.season_id).single()
+      setSession(sess)
+
+      const { data: pl } = await supabase
+        .from('players').select('*').eq('season_id', season.season_id).order('draft_position')
+      setPlayers(pl || [])
+
+      if (sess) {
+        const { data: pks } = await supabase
+          .from('draft_picks')
+          .select('*, players(player_name), drivers(driver_name, car_number, team)')
+          .eq('draft_session_id', sess.draft_session_id)
+          .order('pick_number')
+        setPicks(pks || [])
+      }
+      setLoading(false)
+    }
+    load()
+  }, [season])
+
+  if (loading) return <Loader />
+
+  if (!session) return (
+    <div style={{ textAlign:'center', padding:'48px', color:'var(--muted)', fontSize:15 }}>
+      No draft session found for this season.
+    </div>
+  )
+
+  return (
+    <div>
+      {/* Summary bar */}
+      <div style={{
+        background:'var(--surface)',
+        border:'1px solid var(--border)',
+        borderRadius:12,
+        padding:'14px 20px',
+        display:'flex',
+        flexWrap:'wrap',
+        gap:'8px 28px',
+        marginBottom:24,
+        fontSize:14,
+      }}>
+        <span><span style={{ color:'var(--muted)' }}>Players: </span><span style={{ color:'var(--text)', fontWeight:600 }}>{players.length}</span></span>
+        <span><span style={{ color:'var(--muted)' }}>Rounds: </span><span style={{ color:'var(--text)', fontWeight:600 }}>{session.total_rounds}</span></span>
+        <span><span style={{ color:'var(--muted)' }}>Total picks: </span><span style={{ color:'var(--text)', fontWeight:600 }}>{picks.length}</span></span>
+        <span>
+          <span style={{
+            background: session.is_complete ? 'rgba(34,197,94,0.15)' : 'rgba(245,197,24,0.15)',
+            color: session.is_complete ? 'var(--green)' : 'var(--gold)',
+            borderRadius:6,
+            padding:'2px 10px',
+            fontFamily:"'Barlow Condensed', sans-serif",
+            fontSize:12,
+            fontWeight:700,
+            letterSpacing:'0.05em',
+            textTransform:'uppercase',
+          }}>
+            {session.is_complete ? '✓ Complete' : 'In Progress'}
+          </span>
+        </span>
+      </div>
+
+      <DraftBoard players={players} picks={picks} session={session} />
+    </div>
+  )
+}
+
+// ── Main draft page ────────────────────────────────────────────
 export default function DraftPage() {
-  const [season,     setSeason]     = useState(null)
+  const [allSeasons,  setAllSeasons]  = useState([])
+  const [seasonId,    setSeasonId]    = useState(null)
+  const [season,      setSeason]      = useState(null)
+  const [loading,     setLoading]     = useState(true)
+
+  // Live draft state (active season only)
   const [session,    setSession]    = useState(null)
   const [players,    setPlayers]    = useState([])
   const [picks,      setPicks]      = useState([])
   const [available,  setAvailable]  = useState([])
   const [myPlayer,   setMyPlayer]   = useState(null)
-  const [loading,    setLoading]    = useState(true)
   const [picking,    setPicking]    = useState(false)
   const [error,      setError]      = useState('')
   const [search,     setSearch]     = useState('')
+  const [dataLoading, setDataLoading] = useState(false)
 
+  // Load all seasons on mount
+  useEffect(() => {
+    async function init() {
+      const { data: seasons } = await supabase
+        .from('seasons').select('*').order('season_year', { ascending: false })
+      setAllSeasons(seasons || [])
+      const active = (seasons || []).find(s => s.is_active) || seasons?.[0]
+      if (active) setSeasonId(active.season_id)
+      else setLoading(false)
+    }
+    init()
+    const saved = localStorage.getItem('nascar_my_player_id')
+    if (saved) setMyPlayer(parseInt(saved, 10))
+  }, [])
+
+  // Load active season draft data
   const fetchState = useCallback(async () => {
-    const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
-    setSeason(s)
-    if (!s) { setLoading(false); return }
+    const active = allSeasons.find(s => s.is_active)
+    if (!active || seasonId !== active.season_id) return
 
-    const { data: sess } = await supabase.from('draft_sessions').select('*').eq('season_id', s.season_id).single()
+    const { data: sess } = await supabase
+      .from('draft_sessions').select('*').eq('season_id', active.season_id).single()
     setSession(sess)
 
-    const { data: pl } = await supabase.from('players').select('*').eq('season_id', s.season_id).order('draft_position')
+    const { data: pl } = await supabase
+      .from('players').select('*').eq('season_id', active.season_id).order('draft_position')
     setPlayers(pl || [])
 
-    if (!sess) { setLoading(false); return }
+    if (!sess) { setLoading(false); setDataLoading(false); return }
 
     const { data: pks } = await supabase
       .from('draft_picks')
@@ -60,25 +257,42 @@ export default function DraftPage() {
       .order('pick_number')
     setPicks(pks || [])
 
-    const { data: drv } = await supabase.from('drivers').select('*').eq('season_id', s.season_id).order('driver_name')
+    const { data: drv } = await supabase
+      .from('drivers').select('*').eq('season_id', active.season_id).order('driver_name')
     const taken = new Set((pks||[]).map(p=>p.driver_id))
     setAvailable((drv||[]).filter(d=>!taken.has(d.driver_id)))
     setLoading(false)
-  }, [])
+    setDataLoading(false)
+  }, [allSeasons, seasonId])
 
+  // When seasonId changes, update current season object
   useEffect(() => {
-    const saved = localStorage.getItem('nascar_my_player_id')
-    if (saved) setMyPlayer(parseInt(saved,10))
-  }, [])
+    if (!allSeasons.length || !seasonId) return
+    const s = allSeasons.find(x => x.season_id === seasonId)
+    setSeason(s || null)
+    setDataLoading(true)
 
+    const active = allSeasons.find(x => x.is_active)
+    if (s?.season_id === active?.season_id) {
+      fetchState()
+    } else {
+      setLoading(false)
+      setDataLoading(false)
+    }
+  }, [seasonId, allSeasons])
+
+  // Realtime subscription (active season only)
   useEffect(() => {
+    const active = allSeasons.find(s => s.is_active)
+    if (!active || seasonId !== active.season_id) return
+
     fetchState()
     const ch = supabase.channel('draft_rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'draft_picks'},    fetchState)
       .on('postgres_changes',{event:'*',schema:'public',table:'draft_sessions'}, fetchState)
       .subscribe()
     return () => supabase.removeChannel(ch)
-  }, [fetchState])
+  }, [fetchState, allSeasons, seasonId])
 
   async function makePick(driver) {
     if (!myPlayer || picking) return
@@ -88,6 +302,7 @@ export default function DraftPage() {
     if (e || !data?.success) setError(data?.error || e?.message || 'Pick failed.')
   }
 
+  const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
   const totalPicks    = session?.total_drivers  || 20
   const totalPlayers  = session?.total_players  || 0
   const currentPick   = session?.current_pick_num || 1
@@ -95,6 +310,9 @@ export default function DraftPage() {
   const onClock       = session && !isComplete && players.length ? getPickOwner(currentPick, totalPlayers, players) : null
   const isMyTurn      = onClock?.player_id === myPlayer
   const round         = Math.ceil(currentPick / (totalPlayers||1))
+  const teamMap       = {}
+  players.forEach(p => { teamMap[p.player_id] = [] })
+  picks.forEach(pk => { if (teamMap[pk.player_id]) teamMap[pk.player_id].push(pk) })
 
   const filtered = available.filter(d =>
     d.driver_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -102,242 +320,181 @@ export default function DraftPage() {
     (d.team||'').toLowerCase().includes(search.toLowerCase())
   )
 
-  // Build team columns
-  const teamMap = {}
-  players.forEach(p => { teamMap[p.player_id] = [] })
-  picks.forEach(pk => { if (teamMap[pk.player_id]) teamMap[pk.player_id].push(pk) })
-
-  if (loading) return <Loader />
-  if (!season)  return <Empty icon="🏁" title="No Active Season" sub="An admin needs to set up the league first." />
-  if (!session) return <Empty icon="🚗" title="Draft Not Started" sub="The admin needs to add players and start the draft." />
+  if (loading && allSeasons.length === 0) return <Loader />
 
   return (
     <div className="fade-up">
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 48, color: 'var(--text)', margin: 0 }}>Draft Room</h1>
-        <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 4 }}>{season.season_name}</p>
-      </div>
-
-      {/* "I am" row */}
-      <div style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-        padding: '14px 18px',
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 10,
-        alignItems: 'center',
-        marginBottom: 20,
-      }}>
-        <span style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', whiteSpace:'nowrap' }}>
-          I am:
-        </span>
-        {players.map((p, i) => {
-          const active = myPlayer === p.player_id
-          return (
-            <button key={p.player_id} onClick={() => {
-              setMyPlayer(p.player_id)
-              localStorage.setItem('nascar_my_player_id', p.player_id)
-            }} style={{
-              padding: '6px 16px',
-              borderRadius: 99,
-              border: `2px solid ${active ? PLAYER_COLORS[i%5] : 'var(--border2)'}`,
-              background: active ? PLAYER_COLORS[i%5]+'22' : 'transparent',
-              color: active ? PLAYER_COLORS[i%5] : 'var(--muted)',
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontWeight: 700,
-              fontSize: 14,
-              letterSpacing: '0.05em',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}>
-              {p.player_name}
-            </button>
-          )
-        })}
-        {!myPlayer && <span style={{ color:'var(--gold)', fontSize:13 }}>← Select your name to pick</span>}
-      </div>
-
-      {/* Status card */}
-      <div style={{
-        background: isComplete ? 'rgba(34,197,94,0.08)' : isMyTurn ? 'rgba(232,25,44,0.1)' : 'var(--surface)',
-        border: `2px solid ${isComplete ? 'var(--green)' : isMyTurn ? 'var(--red)' : 'var(--border)'}`,
-        borderRadius: 14,
-        padding: '20px 24px',
-        marginBottom: 24,
-      }} className={isMyTurn ? 'on-clock' : ''}>
-        {isComplete ? (
-          <div style={{ textAlign:'center' }}>
-            <div style={{ fontSize:36, marginBottom:4 }}>🏁</div>
-            <h3 style={{ fontSize:28, color:'var(--green)', margin:0 }}>Draft Complete!</h3>
-            <p style={{ color:'var(--muted)', margin:'4px 0 0', fontSize:14 }}>All 20 drivers have been selected.</p>
-          </div>
-        ) : (
-          <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', alignItems:'center', gap:16 }}>
-            <div>
-              <div style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:4 }}>On the Clock</div>
-              <div style={{ fontFamily:"'Bebas Neue'", fontSize:36, color: isMyTurn ? 'var(--red)' : 'var(--text)', letterSpacing:'0.04em' }}>
-                {onClock?.player_name || '—'}{isMyTurn ? " — That's You!" : ''}
-              </div>
-            </div>
-            <div style={{ display:'flex', gap:24, flexWrap:'wrap' }}>
-              {[
-                { label: 'Pick', value: `${currentPick} / ${totalPicks}` },
-                { label: 'Round', value: `${round} / ${session.total_rounds}` },
-                { label: 'Available', value: available.length },
-              ].map(stat => (
-                <div key={stat.label} style={{ textAlign:'center' }}>
-                  <div style={{ fontFamily:"'Barlow Condensed'", fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:2 }}>{stat.label}</div>
-                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:28, color:'var(--text)', letterSpacing:'0.04em' }}>{stat.value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Animated stripe when it's your turn */}
-      {isMyTurn && <div className="racing-bar" style={{ borderRadius:4, marginBottom:20 }} />}
-
-      {error && (
-        <div style={{ background:'rgba(232,25,44,0.12)', border:'1px solid rgba(232,25,44,0.35)', color:'#ff6b7a', borderRadius:8, padding:'12px 16px', marginBottom:16, fontSize:14 }}>
-          ⚠️ {error}
+      {/* Header + season toggle */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16, marginBottom:24 }}>
+        <div>
+          <h1 style={{ fontSize:48, color:'var(--text)', margin:0 }}>
+            Draft Room
+            {!isActiveSeason && (
+              <span style={{ marginLeft:12, fontFamily:"'Barlow Condensed', sans-serif", fontSize:16, color:'var(--muted)', fontWeight:400, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+                Archive
+              </span>
+            )}
+          </h1>
+          <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season?.season_name}</p>
         </div>
+        <SeasonToggle allSeasons={allSeasons} seasonId={seasonId} onSelect={id => { setSeasonId(id); setSearch('') }} />
+      </div>
+
+      {/* Historical view */}
+      {!isActiveSeason && (
+        <HistoricalDraft season={season} />
       )}
 
-      <div style={{ display:'grid', gridTemplateColumns: isComplete ? '1fr' : '1fr 1fr', gap:24 }}>
-
-        {/* Available drivers */}
-        {!isComplete && (
-          <div>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-              <h2 style={{ fontSize:24, margin:0, color:'var(--text)' }}>Available Drivers</h2>
-              <span style={{ color:'var(--muted)', fontSize:13 }}>{available.length} left</span>
-            </div>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search name, number, or team…"
-              style={{
-                display:'block',
-                width:'100%',
-                background:'var(--bg)',
-                border:'1px solid var(--border2)',
-                borderRadius:8,
-                padding:'10px 14px',
-                color:'var(--text)',
-                fontSize:14,
-                marginBottom:10,
-                outline:'none',
-              }}
-            />
-            <div style={{ overflowY:'auto', maxHeight:480, display:'flex', flexDirection:'column', gap:6 }}>
-              {filtered.map(d => (
-                <div key={d.driver_id} style={{
-                  background:'var(--surface)',
-                  border:'1px solid var(--border)',
-                  borderRadius:10,
-                  padding:'10px 14px',
-                  display:'flex',
-                  alignItems:'center',
-                  justifyContent:'space-between',
-                  gap:10,
-                  transition:'border-color 0.15s',
-                }}>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ fontWeight:600, color:'var(--text)', fontSize:15, whiteSpace:'nowrap' }}>
-                      {d.driver_name}
-                      <span style={{ color:'var(--gold)', fontSize:13, marginLeft:8 }}>#{d.car_number}</span>
-                    </div>
-                    <div style={{ color:'var(--muted)', fontSize:12, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.team}</div>
-                  </div>
-                  {isMyTurn && myPlayer && (
-                    <button onClick={() => makePick(d)} disabled={picking} style={{
-                      flexShrink:0,
-                      background:'var(--red)',
-                      color:'#fff',
-                      border:'none',
-                      borderRadius:7,
-                      padding:'8px 16px',
-                      fontFamily:"'Barlow Condensed', sans-serif",
-                      fontWeight:700,
-                      fontSize:13,
-                      letterSpacing:'0.06em',
-                      textTransform:'uppercase',
-                      cursor:'pointer',
-                      opacity: picking ? 0.5 : 1,
-                    }}>
-                      {picking ? '…' : 'Draft'}
-                    </button>
-                  )}
+      {/* Active season live draft */}
+      {isActiveSeason && (
+        <>
+          {dataLoading ? <Loader /> : (
+            <>
+              {!session ? (
+                <div style={{ textAlign:'center', padding:'60px 20px' }}>
+                  <div style={{ fontSize:52, marginBottom:12 }}>🚗</div>
+                  <h2 style={{ fontSize:28, color:'var(--text)', marginBottom:8 }}>Draft Not Started</h2>
+                  <p style={{ color:'var(--muted)', fontSize:15 }}>The admin needs to add players and start the draft.</p>
                 </div>
-              ))}
-              {filtered.length === 0 && (
-                <div style={{ textAlign:'center', color:'var(--dim)', padding:'32px 0', fontSize:14 }}>No drivers match your search.</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Draft board */}
-        <div>
-          <h2 style={{ fontSize:24, margin:'0 0 12px', color:'var(--text)' }}>Draft Board</h2>
-          {picks.length === 0 ? (
-            <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
-              No picks yet — draft is ready to begin!
-            </div>
-          ) : (
-            <div style={{ display:'grid', gridTemplateColumns:`repeat(${players.length}, 1fr)`, gap:10, overflowX:'auto' }}>
-              {players.map((p, i) => (
-                <div key={p.player_id}>
+              ) : (
+                <>
+                  {/* "I am" row */}
                   <div style={{
-                    textAlign:'center',
-                    fontFamily:"'Barlow Condensed', sans-serif",
-                    fontWeight:700,
-                    fontSize:13,
-                    letterSpacing:'0.06em',
-                    textTransform:'uppercase',
-                    color: PLAYER_COLORS[i%5],
-                    borderBottom: `2px solid ${PLAYER_COLORS[i%5]}`,
-                    paddingBottom:6,
-                    marginBottom:8,
+                    background:'var(--surface)',
+                    border:'1px solid var(--border)',
+                    borderRadius:12,
+                    padding:'14px 18px',
+                    display:'flex',
+                    flexWrap:'wrap',
+                    gap:10,
+                    alignItems:'center',
+                    marginBottom:20,
                   }}>
-                    {p.player_name}
+                    <span style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+                      I am:
+                    </span>
+                    {players.map((p, i) => {
+                      const active = myPlayer === p.player_id
+                      return (
+                        <button key={p.player_id} onClick={() => {
+                          setMyPlayer(p.player_id)
+                          localStorage.setItem('nascar_my_player_id', p.player_id)
+                        }} style={{
+                          padding:'6px 16px',
+                          borderRadius:99,
+                          border:`2px solid ${active ? PLAYER_COLORS[i%5] : 'var(--border2)'}`,
+                          background: active ? PLAYER_COLORS[i%5]+'22' : 'transparent',
+                          color: active ? PLAYER_COLORS[i%5] : 'var(--muted)',
+                          fontFamily:"'Barlow Condensed', sans-serif",
+                          fontWeight:700,
+                          fontSize:14,
+                          letterSpacing:'0.05em',
+                          cursor:'pointer',
+                          transition:'all 0.15s',
+                        }}>
+                          {p.player_name}
+                        </button>
+                      )
+                    })}
+                    {!myPlayer && <span style={{ color:'var(--gold)', fontSize:13 }}>← Select your name to pick</span>}
                   </div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-                    {(teamMap[p.player_id]||[]).sort((a,b)=>a.round_number-b.round_number).map(pk=>(
-                      <div key={pk.draft_pick_id} style={{
-                        background:'var(--surface)',
-                        border:'1px solid var(--border)',
-                        borderRadius:7,
-                        padding:'7px 9px',
-                      }}>
-                        <div style={{ fontWeight:600, fontSize:12, color:'var(--text)', lineHeight:1.3 }}>{pk.drivers?.driver_name}</div>
-                        <div style={{ color:'var(--dim)', fontSize:11, marginTop:2 }}>#{pk.drivers?.car_number} · R{pk.round_number}</div>
-                      </div>
-                    ))}
-                    {Array.from({ length: (session.total_rounds||0) - (teamMap[p.player_id]?.length||0) }).map((_,j) => (
-                      <div key={j} style={{
-                        border:'1px dashed var(--border)',
-                        borderRadius:7,
-                        padding:'7px 9px',
-                        textAlign:'center',
-                        color:'var(--dim)',
-                        fontSize:11,
-                      }}>
-                        Round {(teamMap[p.player_id]?.length||0)+j+1}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-      </div>
+                  {/* Status card */}
+                  <div style={{
+                    background: isComplete ? 'rgba(34,197,94,0.08)' : isMyTurn ? 'rgba(232,25,44,0.1)' : 'var(--surface)',
+                    border:`2px solid ${isComplete ? 'var(--green)' : isMyTurn ? 'var(--red)' : 'var(--border)'}`,
+                    borderRadius:14,
+                    padding:'20px 24px',
+                    marginBottom:24,
+                  }} className={isMyTurn ? 'on-clock' : ''}>
+                    {isComplete ? (
+                      <div style={{ textAlign:'center' }}>
+                        <div style={{ fontSize:36, marginBottom:4 }}>🏁</div>
+                        <h3 style={{ fontSize:28, color:'var(--green)', margin:0 }}>Draft Complete!</h3>
+                        <p style={{ color:'var(--muted)', margin:'4px 0 0', fontSize:14 }}>All 20 drivers have been selected.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', alignItems:'center', gap:16 }}>
+                        <div>
+                          <div style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:4 }}>On the Clock</div>
+                          <div style={{ fontFamily:"'Bebas Neue'", fontSize:36, color: isMyTurn ? 'var(--red)' : 'var(--text)', letterSpacing:'0.04em' }}>
+                            {onClock?.player_name || '—'}{isMyTurn ? " — That's You!" : ''}
+                          </div>
+                        </div>
+                        <div style={{ display:'flex', gap:24, flexWrap:'wrap' }}>
+                          {[
+                            { label:'Pick',      value:`${currentPick} / ${totalPicks}` },
+                            { label:'Round',     value:`${round} / ${session.total_rounds}` },
+                            { label:'Available', value:available.length },
+                          ].map(stat => (
+                            <div key={stat.label} style={{ textAlign:'center' }}>
+                              <div style={{ fontFamily:"'Barlow Condensed'", fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:2 }}>{stat.label}</div>
+                              <div style={{ fontFamily:"'Bebas Neue'", fontSize:28, color:'var(--text)', letterSpacing:'0.04em' }}>{stat.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {isMyTurn && <div className="racing-bar" style={{ borderRadius:4, marginBottom:20 }} />}
+
+                  {error && (
+                    <div style={{ background:'rgba(232,25,44,0.12)', border:'1px solid rgba(232,25,44,0.35)', color:'#ff6b7a', borderRadius:8, padding:'12px 16px', marginBottom:16, fontSize:14 }}>
+                      ⚠️ {error}
+                    </div>
+                  )}
+
+                  <div style={{ display:'grid', gridTemplateColumns: isComplete ? '1fr' : '1fr 1fr', gap:24 }}>
+                    {/* Available drivers */}
+                    {!isComplete && (
+                      <div>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                          <h2 style={{ fontSize:24, margin:0, color:'var(--text)' }}>Available Drivers</h2>
+                          <span style={{ color:'var(--muted)', fontSize:13 }}>{available.length} left</span>
+                        </div>
+                        <input
+                          value={search}
+                          onChange={e => setSearch(e.target.value)}
+                          placeholder="Search name, number, or team…"
+                          style={{ display:'block', width:'100%', background:'var(--bg)', border:'1px solid var(--border2)', borderRadius:8, padding:'10px 14px', color:'var(--text)', fontSize:14, marginBottom:10, outline:'none' }}
+                        />
+                        <div style={{ overflowY:'auto', maxHeight:480, display:'flex', flexDirection:'column', gap:6 }}>
+                          {filtered.map(d => (
+                            <div key={d.driver_id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
+                              <div style={{ minWidth:0 }}>
+                                <div style={{ fontWeight:600, color:'var(--text)', fontSize:15, whiteSpace:'nowrap' }}>
+                                  {d.driver_name}
+                                  <span style={{ color:'var(--gold)', fontSize:13, marginLeft:8 }}>#{d.car_number}</span>
+                                </div>
+                                <div style={{ color:'var(--muted)', fontSize:12, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.team}</div>
+                              </div>
+                              {isMyTurn && myPlayer && (
+                                <button onClick={() => makePick(d)} disabled={picking} style={{ flexShrink:0, background:'var(--red)', color:'#fff', border:'none', borderRadius:7, padding:'8px 16px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:13, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', opacity: picking ? 0.5 : 1 }}>
+                                  {picking ? '…' : 'Draft'}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          {filtered.length === 0 && (
+                            <div style={{ textAlign:'center', color:'var(--dim)', padding:'32px 0', fontSize:14 }}>No drivers match your search.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Draft board */}
+                    <div>
+                      <h2 style={{ fontSize:24, margin:'0 0 12px', color:'var(--text)' }}>Draft Board</h2>
+                      <DraftBoard players={players} picks={picks} session={session} />
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }
