@@ -7,9 +7,9 @@ const MEDALS = ['🥇', '🥈', '🥉']
 const th = {
   padding: '12px 16px',
   fontFamily: "'Barlow Condensed', sans-serif",
-  fontSize: 11,
+  fontSize: 14,
   fontWeight: 700,
-  letterSpacing: '0.1em',
+  letterSpacing: '0.08em',
   textTransform: 'uppercase',
   color: 'var(--muted)',
   textAlign: 'center',
@@ -300,7 +300,7 @@ export default function StandingsPage() {
               })}
             </tbody>
           </table>
-          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px 24px', fontSize: 12, color: 'var(--dim)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
+          <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px 24px', fontSize: 15, color: 'var(--muted)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
             <span><span style={{ color: 'var(--gold)' }}>Adj. Pts</span> = Base Pts − (Wins × 10)</span>
             <span><span style={{ color: '#f87171' }}>− Leader</span> = Adjusted points behind 1st place</span>
             <span><span style={{ color: '#fb923c' }}>− Next</span> = Adjusted points behind the position directly ahead</span>

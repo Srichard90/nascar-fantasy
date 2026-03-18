@@ -327,8 +327,9 @@ export default function ResultsPage() {
                             <div key={d.driver_id} style={{
                               display: 'flex',
                               justifyContent: 'space-between',
-                              alignItems: 'center',
-                              padding: '9px 16px',
+                              alignItems: 'flex-start',
+                              padding: '10px 16px',
+                              minHeight: 56,
                               borderBottom: '1px solid var(--border)',
                               gap: 8,
                             }}>
