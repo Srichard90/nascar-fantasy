@@ -4,9 +4,9 @@ import { useRouter } from 'next/router'
 
 const NAV = [
   { href: '/',         label: 'Standings',     icon: '🏆' },
-  { href: '/schedule', label: 'Schedule',      icon: '🗓️' },
-  { href: '/detail',   label: 'Weekly Detail', icon: '📋' },
   { href: '/metrics',  label: 'Metrics',       icon: '📈' },
+  { href: '/detail',   label: 'Weekly Detail', icon: '📋' },
+  { href: '/schedule', label: 'Schedule',      icon: '🗓️' },
   { href: '/draft',    label: 'Draft',         icon: '🚗' },
   { href: '/admin',    label: 'Admin',         icon: '⚙️'  },
 ]
