@@ -61,6 +61,7 @@ export default function ResultsPage() {
   // Load week data whenever race changes
   const fetchWeek = useCallback(async () => {
     if (!raceId || !seasonId) return
+    const currentRace = races.find(r => r.race_id === raceId)
     setWeekLoad(true)
 
     const { data: players } = await supabase
@@ -82,17 +83,67 @@ export default function ResultsPage() {
     const { data: scores } = await supabase
       .from('player_weekly_scores').select('*').eq('race_id', raceId)
 
+    // Fetch swaps and subs so the display matches the scoring
+    const { data: swaps } = await supabase
+      .from('driver_swaps')
+      .select('*, swap_driver:drivers!driver_swaps_swap_driver_id_fkey(driver_name, car_number)')
+      .eq('season_id', seasonId)
+    const { data: subs } = await supabase
+      .from('driver_substitutions')
+      .select('*, sub_driver:drivers!driver_substitutions_sub_driver_id_fkey(driver_name, car_number)')
+      .eq('season_id', seasonId)
+
     const resMap   = {};  (results || []).forEach(r => { resMap[r.driver_id] = r })
     const scoreMap = {};  (scores  || []).forEach(s => { scoreMap[s.player_id] = s })
 
+    // Resolve effective driver for a given pick and week — mirrors trigger logic
+    function effectiveDriver(pick, weekNumber) {
+      const swap = (swaps || []).find(s =>
+        s.player_id          === pick.player_id &&
+        s.original_driver_id === pick.driver_id &&
+        s.start_week         <= weekNumber
+      )
+      if (swap) return {
+        driver_id: swap.swap_driver_id,
+        name:      swap.swap_driver?.driver_name,
+        num:       swap.swap_driver?.car_number,
+        label:     'swap',
+      }
+
+      const sub = (subs || []).find(s =>
+        s.player_id          === pick.player_id &&
+        s.original_driver_id === pick.driver_id &&
+        s.start_week         <= weekNumber &&
+        (s.end_week === null || s.end_week >= weekNumber)
+      )
+      if (sub) return {
+        driver_id: sub.sub_driver_id,
+        name:      sub.sub_driver?.driver_name,
+        num:       sub.sub_driver?.car_number,
+        label:     'sub',
+      }
+
+      return {
+        driver_id: pick.driver_id,
+        name:      pick.drivers?.driver_name,
+        num:       pick.drivers?.car_number,
+        label:     null,
+      }
+    }
+
     const pd = (players || []).map(p => {
       const myPicks = (picks || []).filter(pk => pk.player_id === p.player_id)
-      const drivers = myPicks.map(pk => ({
-        driver_id: pk.driver_id,
-        name:      pk.drivers?.driver_name,
-        num:       pk.drivers?.car_number,
-        result:    resMap[pk.driver_id] || null,
-      })).sort((a, b) => {
+      const drivers = myPicks.map(pk => {
+        const eff = effectiveDriver(pk, currentRace?.week_number || 0)
+        return {
+          driver_id:       eff.driver_id,
+          name:            eff.name,
+          num:             eff.num,
+          label:           eff.label,
+          original_name:   eff.label ? pk.drivers?.driver_name : null,
+          result:          resMap[eff.driver_id] || null,
+        }
+      }).sort((a, b) => {
         if (!a.result && !b.result) return 0
         if (!a.result) return 1
         if (!b.result) return -1
@@ -112,7 +163,7 @@ export default function ResultsPage() {
 
     setWeekData(pd)
     setWeekLoad(false)
-  }, [raceId, seasonId])
+  }, [raceId, seasonId, races])
 
   useEffect(() => { fetchWeek() }, [fetchWeek])
 
@@ -267,8 +318,19 @@ export default function ResultsPage() {
                       {pd.drivers.map(d => (
                         <div key={d.driver_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 18px', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
                           <div>
-                            <span style={{ color: 'var(--text)', fontWeight: 500 }}>{d.name}</span>
-                            <span style={{ color: 'var(--gold)', fontSize: 12, marginLeft: 6 }}>#{d.num}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ color: 'var(--text)', fontWeight: 500 }}>{d.name}</span>
+                              <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.num}</span>
+                              {d.label === 'swap' && (
+                                <span style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>swap</span>
+                              )}
+                              {d.label === 'sub' && (
+                                <span style={{ background: 'rgba(245,197,24,0.15)', color: 'var(--gold)', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>sub</span>
+                              )}
+                            </div>
+                            {d.original_name && (
+                              <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 1 }}>replaces {d.original_name}</div>
+                            )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {d.result?.dnf && <span style={{ color: 'var(--red)', fontSize: 11, fontFamily: "'Barlow Condensed'", fontWeight: 700, letterSpacing: '0.06em' }}>DNF</span>}
