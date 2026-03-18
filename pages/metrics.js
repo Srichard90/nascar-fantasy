@@ -484,14 +484,16 @@ export default function MetricsPage() {
 
           {/* ── METRIC 4: Available Drivers ── */}
           {metric === 'available' && (() => {
-            const draftedIds = new Set(picks.map(p => p.driver_id))
-            const subInIds   = new Set((activeSubs || []).map(s => s.sub_driver_id))
+            const draftedIds    = new Set(picks.map(p => p.driver_id))
+            const subInIds      = new Set((activeSubs || []).map(s => s.sub_driver_id))
             const swappedOutIds = new Set((allSwaps || []).map(s => s.original_driver_id))
+            const swapInIds     = new Set((allSwaps || []).map(s => s.swap_driver_id))
 
-            // Unavailable = drafted and NOT swapped out, OR actively subbing in
+            // Unavailable = drafted and NOT swapped out, OR actively subbing in, OR picked up via swap
             const unavailableIds = new Set([
               ...([...draftedIds].filter(id => !swappedOutIds.has(id))),
               ...subInIds,
+              ...swapInIds,
             ])
 
             // Global rank across ALL drivers
