@@ -281,19 +281,18 @@ export default function ResultsPage() {
               {/* Week ranking bar */}
               {weekData.length > 0 && (
                 <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 28 }}>
-                  <div style={{ background: 'var(--red)', padding: '8px 20px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  <div style={{ background: '#5a0a12', padding: '8px 20px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#e0a0a8' }}>
                     Week {race?.week_number} Rankings
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekData.length},1fr)`, borderTop: '1px solid var(--border)' }}>
                     {weekData.map((pd, i) => (
                       <div key={pd.player.player_id} style={{ padding: '16px 12px', textAlign: 'center', borderRight: i < weekData.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
+                        <div style={{ fontSize: 14, color: 'var(--text)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4, fontWeight: 700 }}>
                           {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`} {pd.player.player_name}
                         </div>
                         <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: i === 0 ? 'var(--gold)' : 'var(--text)', letterSpacing: '0.04em' }}>
                           {pd.total ?? '—'}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--dim)' }}>{pd.scored} drivers</div>
                       </div>
                     ))}
                   </div>
