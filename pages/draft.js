@@ -41,7 +41,7 @@ export default function DraftPage() {
   const [search,     setSearch]     = useState('')
 
   const fetchState = useCallback(async () => {
-    const { data: s } = await supabase.from('seasons').select('*').eq('is_active',true).single()
+    const { data: s } = await supabase.from('seasons').select('*').single()
     setSeason(s)
     if (!s) { setLoading(false); return }
 
@@ -60,7 +60,7 @@ export default function DraftPage() {
       .order('pick_number')
     setPicks(pks || [])
 
-    const { data: drv } = await supabase.from('drivers').select('*').eq('season_id', s.season_id).eq('is_active',true).order('driver_name')
+    const { data: drv } = await supabase.from('drivers').select('*').eq('season_id', s.season_id).order('driver_name')
     const taken = new Set((pks||[]).map(p=>p.driver_id))
     setAvailable((drv||[]).filter(d=>!taken.has(d.driver_id)))
     setLoading(false)
