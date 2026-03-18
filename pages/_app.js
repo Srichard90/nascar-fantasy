@@ -16,7 +16,7 @@ export default function App({ Component, pageProps }) {
 
       {/* Top nav */}
       <nav style={{
-        background: 'var(--surface)',
+        background: '#111111',
         borderBottom: '1px solid var(--border)',
         position: 'sticky',
         top: 0,
@@ -41,9 +41,9 @@ export default function App({ Component, pageProps }) {
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: 24,
               letterSpacing: '0.08em',
-              color: 'var(--text)',
+              color: '#f5f5f5',
             }}>
-              NASCAR <span style={{ color: 'var(--red)' }}>Fantasy</span>
+              NASCAR <span style={{ color: '#cccccc' }}>Fantasy</span>
             </span>
           </Link>
 
@@ -64,8 +64,8 @@ export default function App({ Component, pageProps }) {
                   fontWeight: 700,
                   letterSpacing: '0.06em',
                   textTransform: 'uppercase',
-                  color: active ? '#fff' : 'var(--muted)',
-                  background: active ? 'var(--red)' : 'transparent',
+                  color: active ? '#f5f5f5' : '#888888',
+                  background: active ? '#2e2e2e' : 'transparent',
                   transition: 'all 0.15s',
                 }}>
                   <span style={{ fontSize: 13 }}>{n.icon}</span>
