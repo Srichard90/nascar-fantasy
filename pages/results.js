@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
 const PLAYER_COLORS = ['#3b82f6','#22c55e','#a855f7','#f97316','#ec4899']
@@ -12,114 +12,190 @@ function posColor(pos) {
 }
 
 export default function ResultsPage() {
-  const [season,     setSeason]     = useState(null)
-  const [races,      setRaces]      = useState([])
-  const [raceId,     setRaceId]     = useState(null)
-  const [weekData,   setWeekData]   = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [weekLoad,   setWeekLoad]   = useState(false)
+  const [allSeasons,  setAllSeasons]  = useState([])
+  const [seasonId,    setSeasonId]    = useState(null)
+  const [season,      setSeason]      = useState(null)
+  const [races,       setRaces]       = useState([])
+  const [raceId,      setRaceId]      = useState(null)
+  const [weekData,    setWeekData]    = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [racesLoad,   setRacesLoad]   = useState(false)
+  const [weekLoad,    setWeekLoad]    = useState(false)
 
+  // Load all seasons once on mount
   useEffect(() => {
     async function init() {
-      const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
-      setSeason(s)
-      if (!s) { setLoading(false); return }
-      const { data: r } = await supabase.from('races').select('*').eq('season_id',s.season_id).eq('is_complete',true).order('week_number',{ascending:false})
-      setRaces(r||[])
-      if (r && r.length) setRaceId(r[0].race_id)
-      setLoading(false)
+      const { data: seasons } = await supabase
+        .from('seasons').select('*').order('season_year', { ascending: false })
+      setAllSeasons(seasons || [])
+      const active = (seasons || []).find(s => s.is_active) || seasons?.[0]
+      if (active) setSeasonId(active.season_id)
+      else setLoading(false)
     }
     init()
   }, [])
 
+  // Load races whenever season changes
   useEffect(() => {
-    if (!raceId || !season) return
-    async function fetchWeek() {
-      setWeekLoad(true)
-      const { data: players } = await supabase.from('players').select('*').eq('season_id', season.season_id).order('player_name')
-      const { data: picks }   = await supabase.from('draft_picks').select('*, drivers(driver_name,car_number), draft_sessions!inner(season_id)').eq('draft_sessions.season_id', season.season_id)
-      const { data: results } = await supabase.from('race_results').select('*').eq('race_id', raceId)
-      const { data: scores }  = await supabase.from('player_weekly_scores').select('*').eq('race_id', raceId)
+    if (!seasonId || !allSeasons.length) return
+    const s = allSeasons.find(x => x.season_id === seasonId)
+    setSeason(s || null)
+    setRaceId(null)
+    setWeekData([])
 
-      const resMap   = {};  (results||[]).forEach(r=>{ resMap[r.driver_id]=r })
-      const scoreMap = {};  (scores||[]).forEach(s=>{ scoreMap[s.player_id]=s })
-
-      const pd = (players||[]).map(p => {
-        const myPicks = (picks||[]).filter(pk=>pk.player_id===p.player_id)
-        const drivers = myPicks.map(pk=>({
-          driver_id:  pk.driver_id,
-          name:       pk.drivers?.driver_name,
-          num:        pk.drivers?.car_number,
-          result:     resMap[pk.driver_id]||null,
-        })).sort((a,b)=>{
-          if (!a.result && !b.result) return 0
-          if (!a.result) return 1
-          if (!b.result) return -1
-          return a.result.finish_position - b.result.finish_position
-        })
-        return { player: p, drivers, total: scoreMap[p.player_id]?.total_points??null, scored: scoreMap[p.player_id]?.drivers_scored??0 }
-      }).sort((a,b)=>{
-        if (a.total===null) return 1
-        if (b.total===null) return -1
-        return a.total-b.total
-      })
-      setWeekData(pd)
-      setWeekLoad(false)
+    async function loadRaces() {
+      setRacesLoad(true)
+      const { data: r } = await supabase
+        .from('races').select('*')
+        .eq('season_id', seasonId)
+        .eq('is_complete', true)
+        .order('week_number', { ascending: false })
+      setRaces(r || [])
+      if (r && r.length) setRaceId(r[0].race_id)
+      setRacesLoad(false)
+      setLoading(false)
     }
-    fetchWeek()
-  }, [raceId, season])
+    loadRaces()
+  }, [seasonId, allSeasons])
 
-  const race = races.find(r=>r.race_id===raceId)
+  // Load week data whenever race changes
+  const fetchWeek = useCallback(async () => {
+    if (!raceId || !seasonId) return
+    setWeekLoad(true)
+
+    const { data: players } = await supabase
+      .from('players').select('*').eq('season_id', seasonId).order('player_name')
+    const { data: picks } = await supabase
+      .from('draft_picks')
+      .select('*, drivers(driver_name,car_number), draft_sessions!inner(season_id)')
+      .eq('draft_sessions.season_id', seasonId)
+    const { data: results } = await supabase
+      .from('race_results').select('*').eq('race_id', raceId)
+    const { data: scores } = await supabase
+      .from('player_weekly_scores').select('*').eq('race_id', raceId)
+
+    const resMap   = {};  (results || []).forEach(r => { resMap[r.driver_id] = r })
+    const scoreMap = {};  (scores  || []).forEach(s => { scoreMap[s.player_id] = s })
+
+    const pd = (players || []).map(p => {
+      const myPicks = (picks || []).filter(pk => pk.player_id === p.player_id)
+      const drivers = myPicks.map(pk => ({
+        driver_id: pk.driver_id,
+        name:      pk.drivers?.driver_name,
+        num:       pk.drivers?.car_number,
+        result:    resMap[pk.driver_id] || null,
+      })).sort((a, b) => {
+        if (!a.result && !b.result) return 0
+        if (!a.result) return 1
+        if (!b.result) return -1
+        return a.result.finish_position - b.result.finish_position
+      })
+      return {
+        player: p,
+        drivers,
+        total:  scoreMap[p.player_id]?.total_points ?? null,
+        scored: scoreMap[p.player_id]?.drivers_scored ?? 0,
+      }
+    }).sort((a, b) => {
+      if (a.total === null) return 1
+      if (b.total === null) return -1
+      return a.total - b.total
+    })
+
+    setWeekData(pd)
+    setWeekLoad(false)
+  }, [raceId, seasonId])
+
+  useEffect(() => { fetchWeek() }, [fetchWeek])
+
+  const race             = races.find(r => r.race_id === raceId)
+  const isActiveSeason   = allSeasons.find(s => s.is_active)?.season_id === seasonId
 
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:300 }}>
-      <span style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:18, letterSpacing:'0.1em' }}>LOADING…</span>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+      <span style={{ color: 'var(--muted)', fontFamily: "'Barlow Condensed'", fontSize: 18, letterSpacing: '0.1em' }}>LOADING…</span>
     </div>
   )
 
-  if (!season) return (
-    <div style={{ textAlign:'center', padding:'60px 20px' }}>
-      <p style={{ color:'var(--muted)', fontSize:17 }}>No active season found.</p>
+  if (!allSeasons.length) return (
+    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <p style={{ color: 'var(--muted)', fontSize: 17 }}>No seasons found.</p>
     </div>
   )
 
   return (
     <div className="fade-up">
-      <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontSize:48, color:'var(--text)', margin:0 }}>Weekly Results</h1>
-        <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season.season_name}</p>
+      {/* Header + season selector */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 48, color: 'var(--text)', margin: 0 }}>
+              Weekly Results
+              {!isActiveSeason && (
+                <span style={{ marginLeft: 12, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, color: 'var(--muted)', fontWeight: 400, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  Archive
+                </span>
+              )}
+            </h1>
+            <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 4 }}>{season?.season_name}</p>
+          </div>
+
+          {/* Season toggle */}
+          {allSeasons.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                Season:
+              </span>
+              {[...allSeasons].sort((a, b) => b.season_year - a.season_year).map(s => (
+                <button key={s.season_id} onClick={() => setSeasonId(s.season_id)} style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: `2px solid ${seasonId === s.season_id ? 'var(--red)' : 'var(--border2)'}`,
+                  background: seasonId === s.season_id ? 'rgba(232,25,44,0.12)' : 'transparent',
+                  color: seasonId === s.season_id ? 'var(--text)' : 'var(--muted)',
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  letterSpacing: '0.05em',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}>
+                  {s.season_year}
+                  {s.is_active && (
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {races.length === 0 ? (
-        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'60px 40px', textAlign:'center' }}>
-          <div style={{ fontSize:48, marginBottom:12 }}>🏎️</div>
-          <p style={{ color:'var(--muted)', fontSize:17 }}>No completed races yet.</p>
-          <p style={{ color:'var(--dim)', fontSize:13, marginTop:6 }}>Results appear here once the admin enters finish positions.</p>
+      {racesLoad && (
+        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.1em' }}>LOADING…</div>
+      )}
+
+      {!racesLoad && races.length === 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '60px 40px', textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🏎️</div>
+          <p style={{ color: 'var(--muted)', fontSize: 17 }}>No completed races for this season.</p>
         </div>
-      ) : (
+      )}
+
+      {!racesLoad && races.length > 0 && (
         <>
           {/* Race selector */}
-          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
-            <label style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>
-              Race:
-            </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+            <label style={{ color: 'var(--muted)', fontFamily: "'Barlow Condensed'", fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Race:</label>
             <select
-              value={raceId||''}
-              onChange={e=>setRaceId(parseInt(e.target.value,10))}
-              style={{
-                background:'var(--surface)',
-                border:'1px solid var(--border2)',
-                borderRadius:8,
-                padding:'9px 14px',
-                color:'var(--text)',
-                fontSize:14,
-                fontFamily:"'Barlow', sans-serif",
-                outline:'none',
-                cursor:'pointer',
-                maxWidth:'100%',
-              }}
+              value={raceId || ''}
+              onChange={e => setRaceId(parseInt(e.target.value, 10))}
+              style={{ background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 14px', color: 'var(--text)', fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: 'none', cursor: 'pointer', maxWidth: '100%' }}
             >
-              {races.map(r=>(
+              {races.map(r => (
                 <option key={r.race_id} value={r.race_id}>
                   Week {r.week_number} — {r.race_name}
                 </option>
@@ -129,129 +205,71 @@ export default function ResultsPage() {
 
           {/* Race info banner */}
           {race && (
-            <div style={{
-              background:'var(--surface)',
-              border:'1px solid var(--border)',
-              borderRadius:12,
-              padding:'14px 20px',
-              display:'flex',
-              flexWrap:'wrap',
-              gap:'8px 28px',
-              marginBottom:24,
-              fontSize:14,
-            }}>
-              <span><span style={{ color:'var(--muted)' }}>Race: </span><strong style={{ color:'var(--text)' }}>{race.race_name}</strong></span>
-              {race.track_name && <span><span style={{ color:'var(--muted)' }}>Track: </span><span style={{ color:'var(--text)' }}>{race.track_name}</span></span>}
-              {race.race_date  && <span><span style={{ color:'var(--muted)' }}>Date: </span><span style={{ color:'var(--text)' }}>{race.race_date}</span></span>}
-              <span><span style={{ color:'var(--muted)' }}>Week: </span><span style={{ color:'var(--gold)', fontWeight:700 }}>{race.week_number}</span></span>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px', display: 'flex', flexWrap: 'wrap', gap: '8px 28px', marginBottom: 24, fontSize: 14 }}>
+              <span><span style={{ color: 'var(--muted)' }}>Race: </span><strong style={{ color: 'var(--text)' }}>{race.race_name}</strong></span>
+              {race.track_name  && <span><span style={{ color: 'var(--muted)' }}>Track: </span><span style={{ color: 'var(--text)' }}>{race.track_name}</span></span>}
+              {race.race_date   && <span><span style={{ color: 'var(--muted)' }}>Date: </span><span style={{ color: 'var(--text)' }}>{race.race_date}</span></span>}
+              {race.race_time   && <span><span style={{ color: 'var(--muted)' }}>Time: </span><span style={{ color: 'var(--text)' }}>{race.race_time}</span></span>}
+              {race.tv_network  && <span><span style={{ color: 'var(--muted)' }}>TV: </span><span style={{ color: 'var(--text)' }}>{race.tv_network}</span></span>}
+              <span><span style={{ color: 'var(--muted)' }}>Week: </span><span style={{ color: 'var(--gold)', fontWeight: 700 }}>{race.week_number}</span></span>
             </div>
           )}
 
           {weekLoad ? (
-            <div style={{ textAlign:'center', padding:'48px', color:'var(--muted)', fontFamily:"'Barlow Condensed'", letterSpacing:'0.1em' }}>LOADING WEEK DATA…</div>
+            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.1em' }}>LOADING WEEK DATA…</div>
           ) : (
             <>
               {/* Week ranking bar */}
-              <div style={{
-                background:'var(--surface)',
-                border:'1px solid var(--border)',
-                borderRadius:12,
-                overflow:'hidden',
-                marginBottom:28,
-              }}>
-                <div style={{
-                  background:'var(--red)',
-                  padding:'8px 20px',
-                  fontFamily:"'Barlow Condensed', sans-serif",
-                  fontSize:13,
-                  fontWeight:700,
-                  letterSpacing:'0.1em',
-                  textTransform:'uppercase',
-                }}>
-                  Week {race?.week_number} Rankings
-                </div>
-                <div style={{ display:'grid', gridTemplateColumns:`repeat(${weekData.length},1fr)`, borderTop:'1px solid var(--border)' }}>
-                  {weekData.map((pd,i) => (
-                    <div key={pd.player.player_id} style={{
-                      padding:'16px 12px',
-                      textAlign:'center',
-                      borderRight: i < weekData.length-1 ? '1px solid var(--border)' : 'none',
-                    }}>
-                      <div style={{ fontSize:11, color:'var(--muted)', fontFamily:"'Barlow Condensed'", letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:4 }}>
-                        {i===0?'🏆':i===1?'🥈':i===2?'🥉':`#${i+1}`} {pd.player.player_name}
-                      </div>
-                      <div style={{ fontFamily:"'Bebas Neue'", fontSize:32, color: i===0 ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.04em' }}>
-                        {pd.total ?? '—'}
-                      </div>
-                      <div style={{ fontSize:11, color:'var(--dim)' }}>{pd.scored} drivers</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Player cards grid */}
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:20 }}>
-                {weekData.map((pd,i) => (
-                  <div key={pd.player.player_id} style={{
-                    background:'var(--surface)',
-                    border: `1px solid ${PLAYER_COLORS[i%5]}44`,
-                    borderRadius:14,
-                    overflow:'hidden',
-                  }}>
-                    {/* Card header */}
-                    <div style={{
-                      borderBottom: `2px solid ${PLAYER_COLORS[i%5]}`,
-                      padding:'14px 18px',
-                      display:'flex',
-                      justifyContent:'space-between',
-                      alignItems:'center',
-                    }}>
-                      <div>
-                        <div style={{ fontFamily:"'Bebas Neue'", fontSize:22, color:PLAYER_COLORS[i%5], letterSpacing:'0.04em' }}>
-                          {pd.player.player_name}
+              {weekData.length > 0 && (
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 28 }}>
+                  <div style={{ background: 'var(--red)', padding: '8px 20px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    Week {race?.week_number} Rankings
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekData.length},1fr)`, borderTop: '1px solid var(--border)' }}>
+                    {weekData.map((pd, i) => (
+                      <div key={pd.player.player_id} style={{ padding: '16px 12px', textAlign: 'center', borderRight: i < weekData.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
+                          {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`} {pd.player.player_name}
                         </div>
-                        <div style={{ color:'var(--dim)', fontSize:12 }}>{pd.scored} / {pd.drivers.length} scored</div>
-                      </div>
-                      <div style={{ textAlign:'right' }}>
-                        <div style={{ fontFamily:"'Bebas Neue'", fontSize:32, color:'var(--gold)', letterSpacing:'0.04em' }}>
+                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: i === 0 ? 'var(--gold)' : 'var(--text)', letterSpacing: '0.04em' }}>
                           {pd.total ?? '—'}
                         </div>
-                        <div style={{ color:'var(--dim)', fontSize:11 }}>pts</div>
+                        <div style={{ fontSize: 11, color: 'var(--dim)' }}>{pd.scored} drivers</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Player cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+                {weekData.map((pd, i) => (
+                  <div key={pd.player.player_id} style={{ background: 'var(--surface)', border: `1px solid ${PLAYER_COLORS[i % 5]}44`, borderRadius: 14, overflow: 'hidden' }}>
+                    <div style={{ borderBottom: `2px solid ${PLAYER_COLORS[i % 5]}`, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em' }}>{pd.player.player_name}</div>
+                        <div style={{ color: 'var(--dim)', fontSize: 12 }}>{pd.scored} / {pd.drivers.length} scored</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: 'var(--gold)', letterSpacing: '0.04em' }}>{pd.total ?? '—'}</div>
+                        <div style={{ color: 'var(--dim)', fontSize: 11 }}>pts</div>
                       </div>
                     </div>
-
-                    {/* Driver rows */}
                     <div>
                       {pd.drivers.map(d => (
-                        <div key={d.driver_id} style={{
-                          display:'flex',
-                          justifyContent:'space-between',
-                          alignItems:'center',
-                          padding:'9px 18px',
-                          borderBottom:'1px solid var(--border)',
-                          fontSize:14,
-                        }}>
+                        <div key={d.driver_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 18px', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
                           <div>
-                            <span style={{ color:'var(--text)', fontWeight:500 }}>{d.name}</span>
-                            <span style={{ color:'var(--gold)', fontSize:12, marginLeft:6 }}>#{d.num}</span>
+                            <span style={{ color: 'var(--text)', fontWeight: 500 }}>{d.name}</span>
+                            <span style={{ color: 'var(--gold)', fontSize: 12, marginLeft: 6 }}>#{d.num}</span>
                           </div>
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                            {d.result?.dnf && (
-                              <span style={{ color:'var(--red)', fontSize:11, fontFamily:"'Barlow Condensed'", fontWeight:700, letterSpacing:'0.06em' }}>DNF</span>
-                            )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {d.result?.dnf && <span style={{ color: 'var(--red)', fontSize: 11, fontFamily: "'Barlow Condensed'", fontWeight: 700, letterSpacing: '0.06em' }}>DNF</span>}
                             {d.result ? (
-                              <span style={{
-                                fontFamily:"'Bebas Neue'",
-                                fontSize:22,
-                                color: posColor(d.result.finish_position),
-                                letterSpacing:'0.04em',
-                                minWidth:36,
-                                textAlign:'right',
-                              }}>
+                              <span style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: posColor(d.result.finish_position), letterSpacing: '0.04em', minWidth: 36, textAlign: 'right' }}>
                                 P{d.result.finish_position}
                               </span>
                             ) : (
-                              <span style={{ color:'var(--dim)', fontSize:12, fontStyle:'italic' }}>no result</span>
+                              <span style={{ color: 'var(--dim)', fontSize: 12, fontStyle: 'italic' }}>no result</span>
                             )}
                           </div>
                         </div>
