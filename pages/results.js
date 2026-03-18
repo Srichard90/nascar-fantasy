@@ -278,75 +278,94 @@ export default function ResultsPage() {
             <div style={{ textAlign: 'center', padding: '48px', color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.1em' }}>LOADING WEEK DATA…</div>
           ) : (
             <>
-              {/* Week ranking bar */}
+              {/* Combined rankings + driver lists */}
               {weekData.length > 0 && (
-                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 28 }}>
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+
+                  {/* Header bar */}
                   <div style={{ background: '#5a0a12', padding: '8px 20px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ffffff' }}>
                     Week {race?.week_number} Rankings
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekData.length},1fr)`, borderTop: '1px solid var(--border)' }}>
+
+                  {/* Player columns — all in one grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekData.length}, 1fr)`, borderTop: '1px solid var(--border)', overflowX: 'auto' }}>
                     {weekData.map((pd, i) => (
-                      <div key={pd.player.player_id} style={{ padding: '16px 12px', textAlign: 'center', borderRight: i < weekData.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ fontSize: 14, color: 'var(--text)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4, fontWeight: 700 }}>
-                          {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`} {pd.player.player_name}
+                      <div key={pd.player.player_id} style={{
+                        borderRight: i < weekData.length - 1 ? '1px solid var(--border)' : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                      }}>
+
+                        {/* Player header: name + total */}
+                        <div style={{
+                          padding: '14px 16px',
+                          borderBottom: `2px solid ${PLAYER_COLORS[i % 5]}`,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
+                        }}>
+                          <div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>
+                              {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                            </div>
+                            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 16, fontWeight: 700, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                              {pd.player.player_name}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 30, color: i === 0 ? 'var(--gold)' : 'var(--text)', letterSpacing: '0.04em', lineHeight: 1 }}>
+                              {pd.total ?? '—'}
+                            </div>
+                            <div style={{ color: 'var(--dim)', fontSize: 10, fontFamily: "'Barlow Condensed'", textTransform: 'uppercase', letterSpacing: '0.05em' }}>pts</div>
+                          </div>
                         </div>
-                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: i === 0 ? 'var(--gold)' : 'var(--text)', letterSpacing: '0.04em' }}>
-                          {pd.total ?? '—'}
+
+                        {/* Driver rows */}
+                        <div style={{ flex: 1 }}>
+                          {pd.drivers.map(d => (
+                            <div key={d.driver_id} style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '9px 16px',
+                              borderBottom: '1px solid var(--border)',
+                              gap: 8,
+                            }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                  <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: 20 }}>{d.name}</span>
+                                  <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.num}</span>
+                                  {d.label === 'swap' && (
+                                    <span style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>swap</span>
+                                  )}
+                                  {d.label === 'sub' && (
+                                    <span style={{ background: 'rgba(245,197,24,0.15)', color: 'var(--gold)', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>sub</span>
+                                  )}
+                                </div>
+                                {d.original_name && (
+                                  <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 1 }}>replaces {d.original_name}</div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                {d.result?.dnf && <span style={{ color: 'var(--red)', fontSize: 11, fontFamily: "'Barlow Condensed'", fontWeight: 700, letterSpacing: '0.06em' }}>DNF</span>}
+                                {d.result ? (
+                                  <span style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: posColor(d.result.finish_position), letterSpacing: '0.04em', minWidth: 32, textAlign: 'right' }}>
+                                    P{d.result.finish_position}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--dim)', fontSize: 12, fontStyle: 'italic' }}>—</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
+
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-
-              {/* Player cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-                {weekData.map((pd, i) => (
-                  <div key={pd.player.player_id} style={{ background: 'var(--surface)', border: `1px solid ${PLAYER_COLORS[i % 5]}44`, borderRadius: 14, overflow: 'hidden' }}>
-                    <div style={{ borderBottom: `2px solid ${PLAYER_COLORS[i % 5]}`, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: PLAYER_COLORS[i % 5], letterSpacing: '0.04em' }}>{pd.player.player_name}</div>
-
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: 'var(--gold)', letterSpacing: '0.04em' }}>{pd.total ?? '—'}</div>
-                        <div style={{ color: 'var(--dim)', fontSize: 11 }}>pts</div>
-                      </div>
-                    </div>
-                    <div>
-                      {pd.drivers.map(d => (
-                        <div key={d.driver_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 18px', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span style={{ color: 'var(--text)', fontWeight: 500 }}>{d.name}</span>
-                              <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.num}</span>
-                              {d.label === 'swap' && (
-                                <span style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>swap</span>
-                              )}
-                              {d.label === 'sub' && (
-                                <span style={{ background: 'rgba(245,197,24,0.15)', color: 'var(--gold)', borderRadius: 4, padding: '1px 6px', fontFamily: "'Barlow Condensed'", fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>sub</span>
-                              )}
-                            </div>
-                            {d.original_name && (
-                              <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 1 }}>replaces {d.original_name}</div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {d.result?.dnf && <span style={{ color: 'var(--red)', fontSize: 11, fontFamily: "'Barlow Condensed'", fontWeight: 700, letterSpacing: '0.06em' }}>DNF</span>}
-                            {d.result ? (
-                              <span style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: posColor(d.result.finish_position), letterSpacing: '0.04em', minWidth: 36, textAlign: 'right' }}>
-                                P{d.result.finish_position}
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--dim)', fontSize: 12, fontStyle: 'italic' }}>no result</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </>
           )}
         </>
