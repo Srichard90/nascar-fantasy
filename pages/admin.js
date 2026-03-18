@@ -382,6 +382,8 @@ function RacesTab({ season, races, reload, flash, boom }) {
   const [name, setName] = useState('')
   const [trk,  setTrk]  = useState('')
   const [dt,   setDt]   = useState('')
+  const [tv,   setTv]   = useState('')
+  const [time, setTime] = useState('')
   const [busy, setBusy] = useState(false)
 
   const nextWk = races.length > 0 ? Math.max(...races.map(r=>r.week_number)) + 1 : 1
@@ -394,10 +396,12 @@ function RacesTab({ season, races, reload, flash, boom }) {
       race_name:   name,
       track_name:  trk||null,
       race_date:   dt||null,
+      tv_network:  tv||null,
+      race_time:   time||null,
     })
     setBusy(false)
     if (error) { boom(error.message); return }
-    setName(''); setTrk(''); setDt(''); setWk('')
+    setName(''); setTrk(''); setDt(''); setWk(''); setTv(''); setTime('')
     flash(`Race "${name}" added!`)
     reload()
   }
@@ -424,9 +428,19 @@ function RacesTab({ season, races, reload, flash, boom }) {
             <label style={lbl}>Track Name</label>
             <input type="text" value={trk} onChange={e=>setTrk(e.target.value)} placeholder="e.g. Daytona International Speedway" style={inp} />
           </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div>
+              <label style={lbl}>Race Date</label>
+              <input type="date" value={dt} onChange={e=>setDt(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Race Time</label>
+              <input type="text" value={time} onChange={e=>setTime(e.target.value)} placeholder="e.g. 2:30 PM ET" style={inp} />
+            </div>
+          </div>
           <div>
-            <label style={lbl}>Race Date</label>
-            <input type="date" value={dt} onChange={e=>setDt(e.target.value)} style={{ ...inp, width:'auto', maxWidth:220 }} />
+            <label style={lbl}>TV Network</label>
+            <input type="text" value={tv} onChange={e=>setTv(e.target.value)} placeholder="e.g. FOX, NBC, USA, FS1" style={{ ...inp, maxWidth:220 }} />
           </div>
           <div>
             <button onClick={addRace} disabled={busy||!name} style={{ ...btn('red'), opacity: busy||!name ? 0.4 : 1 }}>
@@ -442,29 +456,31 @@ function RacesTab({ season, races, reload, flash, boom }) {
           <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
             {[...races].reverse().map(r => (
               <div key={r.race_id} style={{
-                display:'flex', justifyContent:'space-between', alignItems:'center',
                 background:'var(--bg)', border:'1px solid var(--border)', borderRadius:9,
-                padding:'11px 16px', fontSize:14, gap:10,
+                padding:'11px 16px', fontSize:14,
               }}>
-                <div style={{ minWidth:0 }}>
-                  <span style={{ color:'var(--gold)', fontFamily:"'Barlow Condensed'", fontWeight:700, marginRight:10 }}>W{r.week_number}</span>
-                  <span style={{ color:'var(--text)', fontWeight:500 }}>{r.race_name}</span>
-                  {r.track_name && <span style={{ color:'var(--muted)', fontSize:13, marginLeft:8 }}>· {r.track_name}</span>}
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                  <div style={{ minWidth:0 }}>
+                    <span style={{ color:'var(--gold)', fontFamily:"'Barlow Condensed'", fontWeight:700, marginRight:10 }}>W{r.week_number}</span>
+                    <span style={{ color:'var(--text)', fontWeight:500 }}>{r.race_name}</span>
+                  </div>
+                  <span style={{
+                    flexShrink:0,
+                    background: r.is_complete ? 'rgba(34,197,94,0.15)' : 'var(--surface2)',
+                    color: r.is_complete ? 'var(--green)' : 'var(--muted)',
+                    borderRadius:6, padding:'2px 10px',
+                    fontFamily:"'Barlow Condensed', sans-serif",
+                    fontSize:12, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
+                  }}>
+                    {r.is_complete ? 'Complete' : 'Upcoming'}
+                  </span>
                 </div>
-                <span style={{
-                  flexShrink:0,
-                  background: r.is_complete ? 'rgba(34,197,94,0.15)' : 'var(--surface2)',
-                  color: r.is_complete ? 'var(--green)' : 'var(--muted)',
-                  borderRadius:6,
-                  padding:'2px 10px',
-                  fontFamily:"'Barlow Condensed', sans-serif",
-                  fontSize:12,
-                  fontWeight:700,
-                  letterSpacing:'0.05em',
-                  textTransform:'uppercase',
-                }}>
-                  {r.is_complete ? 'Complete' : 'Upcoming'}
-                </span>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 16px', marginTop:4, fontSize:12, color:'var(--muted)' }}>
+                  {r.track_name  && <span>🏁 {r.track_name}</span>}
+                  {r.race_date   && <span>📅 {r.race_date}</span>}
+                  {r.race_time   && <span>🕐 {r.race_time}</span>}
+                  {r.tv_network  && <span>📺 {r.tv_network}</span>}
+                </div>
               </div>
             ))}
           </div>
