@@ -54,10 +54,17 @@ function SeasonToggle({ allSeasons, seasonId, onSelect }) {
 }
 
 // ── Draft board (shared between live and historical) ──────────
-function DraftBoard({ players, picks, session }) {
+function DraftBoard({ players, picks, session, swaps = [] }) {
   const teamMap = {}
   players.forEach(p => { teamMap[p.player_id] = [] })
   picks.forEach(pk => { if (teamMap[pk.player_id]) teamMap[pk.player_id].push(pk) })
+
+  // Index swaps by player_id -> original_driver_id for quick lookup
+  const swapMap = {}
+  swaps.forEach(sw => {
+    if (!swapMap[sw.player_id]) swapMap[sw.player_id] = {}
+    swapMap[sw.player_id][sw.original_driver_id] = sw
+  })
 
   if (picks.length === 0) return (
     <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
@@ -67,7 +74,7 @@ function DraftBoard({ players, picks, session }) {
 
   return (
     <div style={{ overflowX:'auto' }}>
-      <div style={{ display:'grid', gridTemplateColumns:`repeat(${players.length}, minmax(120px, 1fr))`, gap:10, minWidth: players.length * 130 }}>
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${players.length}, minmax(140px, 1fr))`, gap:10, minWidth: players.length * 150 }}>
         {players.map((p, i) => (
           <div key={p.player_id}>
             <div style={{
@@ -87,21 +94,59 @@ function DraftBoard({ players, picks, session }) {
             <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
               {(teamMap[p.player_id]||[])
                 .sort((a,b)=>a.round_number-b.round_number)
-                .map(pk=>(
-                  <div key={pk.draft_pick_id} style={{
-                    background:'var(--surface)',
-                    border:'1px solid var(--border)',
-                    borderRadius:7,
-                    padding:'7px 9px',
-                  }}>
-                    <div style={{ fontWeight:600, fontSize:12, color:'var(--text)', lineHeight:1.3 }}>
-                      {pk.drivers?.driver_name}
+                .map(pk => {
+                  const swap = swapMap[p.player_id]?.[pk.driver_id]
+                  return (
+                    <div key={pk.draft_pick_id} style={{
+                      background: swap ? 'rgba(99,102,241,0.08)' : 'var(--surface)',
+                      border: `1px solid ${swap ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
+                      borderRadius:7,
+                      padding:'7px 9px',
+                    }}>
+                      {/* Original driver — struck through if swapped */}
+                      <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                        <span style={{
+                          fontWeight:600,
+                          fontSize:12,
+                          color: swap ? 'var(--dim)' : 'var(--text)',
+                          lineHeight:1.3,
+                          textDecoration: swap ? 'line-through' : 'none',
+                        }}>
+                          {pk.drivers?.driver_name}
+                        </span>
+                        {swap && (
+                          <span style={{
+                            background:'rgba(99,102,241,0.2)',
+                            color:'#a5b4fc',
+                            borderRadius:4,
+                            padding:'1px 5px',
+                            fontFamily:"'Barlow Condensed', sans-serif",
+                            fontSize:10,
+                            fontWeight:700,
+                            letterSpacing:'0.06em',
+                            textTransform:'uppercase',
+                            flexShrink:0,
+                          }}>swap</span>
+                        )}
+                      </div>
+                      <div style={{ color:'var(--dim)', fontSize:11, marginTop:1 }}>
+                        #{pk.drivers?.car_number} · R{pk.round_number}
+                      </div>
+                      {/* Swap driver shown below */}
+                      {swap && (
+                        <div style={{ marginTop:5, paddingTop:5, borderTop:'1px solid rgba(99,102,241,0.2)' }}>
+                          <div style={{ fontWeight:600, fontSize:12, color:'#a5b4fc', lineHeight:1.3 }}>
+                            {swap.swap_driver?.driver_name}
+                          </div>
+                          <div style={{ color:'rgba(165,180,252,0.6)', fontSize:11, marginTop:1 }}>
+                            #{swap.swap_driver?.car_number} · from Wk {swap.start_week}
+                            {swap.notes && <span style={{ color:'var(--dim)', fontStyle:'italic' }}> · {swap.notes}</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div style={{ color:'var(--dim)', fontSize:11, marginTop:2 }}>
-                      #{pk.drivers?.car_number} · R{pk.round_number}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               {/* Empty slots */}
               {session && Array.from({ length: (session.total_rounds||0) - (teamMap[p.player_id]?.length||0) }).map((_,j)=>(
                 <div key={j} style={{
@@ -128,6 +173,7 @@ function HistoricalDraft({ season }) {
   const [session,  setSession]  = useState(null)
   const [players,  setPlayers]  = useState([])
   const [picks,    setPicks]    = useState([])
+  const [swaps,    setSwaps]    = useState([])
   const [loading,  setLoading]  = useState(true)
 
   useEffect(() => {
@@ -150,6 +196,13 @@ function HistoricalDraft({ season }) {
           .order('pick_number')
         setPicks(pks || [])
       }
+
+      const { data: sw } = await supabase
+        .from('driver_swaps')
+        .select('*, swap_driver:drivers!driver_swaps_swap_driver_id_fkey(driver_name, car_number)')
+        .eq('season_id', season.season_id)
+      setSwaps(sw || [])
+
       setLoading(false)
     }
     load()
@@ -197,7 +250,7 @@ function HistoricalDraft({ season }) {
         </span>
       </div>
 
-      <DraftBoard players={players} picks={picks} session={session} />
+      <DraftBoard players={players} picks={picks} session={session} swaps={swaps} />
     </div>
   )
 }
@@ -486,7 +539,7 @@ export default function DraftPage() {
                     {/* Draft board */}
                     <div>
                       <h2 style={{ fontSize:24, margin:'0 0 12px', color:'var(--text)' }}>Draft Board</h2>
-                      <DraftBoard players={players} picks={picks} session={session} />
+                      <DraftBoard players={players} picks={picks} session={session} swaps={swaps} />
                     </div>
                   </div>
                 </>
