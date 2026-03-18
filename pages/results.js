@@ -65,10 +65,18 @@ export default function ResultsPage() {
 
     const { data: players } = await supabase
       .from('players').select('*').eq('season_id', seasonId).order('player_name')
-    const { data: picks } = await supabase
-      .from('draft_picks')
-      .select('*, drivers(driver_name,car_number), draft_sessions!inner(season_id)')
-      .eq('draft_sessions.season_id', seasonId)
+
+    // Get the draft session for this season first, then fetch picks directly
+    const { data: draftSession } = await supabase
+      .from('draft_sessions').select('draft_session_id').eq('season_id', seasonId).single()
+
+    const { data: picks } = draftSession
+      ? await supabase
+          .from('draft_picks')
+          .select('*, drivers(driver_name, car_number)')
+          .eq('draft_session_id', draftSession.draft_session_id)
+      : { data: [] }
+
     const { data: results } = await supabase
       .from('race_results').select('*').eq('race_id', raceId)
     const { data: scores } = await supabase
