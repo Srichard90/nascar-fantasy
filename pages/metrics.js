@@ -40,7 +40,8 @@ export default function MetricsPage() {
   const [players,     setPlayers]     = useState([])  // season players ordered by draft_position
   const [picks,       setPicks]       = useState([])  // draft picks with driver info
   const [driverTotals, setDriverTotals] = useState({}) // driver_id -> total finish pts (season)
-  const [driverRanks,  setDriverRanks]  = useState({}) // driver_id -> rank among all drafted drivers
+  const [driverRanks,  setDriverRanks]  = useState({}) // driver_id -> rank among ALL drivers with results
+  const [totalDriverCount, setTotalDriverCount] = useState(0)
 
   // Load seasons
   useEffect(() => {
@@ -111,20 +112,20 @@ export default function MetricsPage() {
           totals[r.driver_id] = (totals[r.driver_id] || 0) + r.finish_position
         })
 
-        // Only rank drivers who were actually drafted this season
-        const draftedDriverIds = (pks || []).map(p => p.driver_id)
-        const draftedWithTotals = draftedDriverIds
-          .filter(id => totals[id] !== undefined)
-          .map(id => ({ id, total: totals[id] }))
+        // Rank ALL drivers who have results this season (not just drafted)
+        const allDriversWithTotals = Object.entries(totals)
+          .map(([id, total]) => ({ id: parseInt(id, 10), total }))
           .sort((a, b) => a.total - b.total)
 
         const ranks = {}
-        draftedWithTotals.forEach((d, i) => { ranks[d.id] = i + 1 })
+        const totalDriverCount = allDriversWithTotals.length
+        allDriversWithTotals.forEach((d, i) => { ranks[d.id] = i + 1 })
 
         setPlayers(pl || [])
         setPicks(pks || [])
         setDriverTotals(totals)
         setDriverRanks(ranks)
+        setTotalDriverCount(totalDriverCount)
       } catch (err) {
         console.error('Metrics load error:', err)
       } finally {
@@ -269,7 +270,7 @@ export default function MetricsPage() {
                             {best?.total ?? '—'}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'var(--green)' }}>
-                            {best?.rank ? ordinal(best.rank) : '—'}
+                            {best?.rank ? `${ordinal(best.rank)} of ${totalDriverCount}` : '—'}
                           </td>
                           {/* Worst */}
                           <td style={{ padding:'14px 16px', textAlign:'center' }}>
@@ -280,7 +281,7 @@ export default function MetricsPage() {
                             {worst?.total ?? '—'}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'#f87171' }}>
-                            {worst?.rank ? ordinal(worst.rank) : '—'}
+                            {worst?.rank ? `${ordinal(worst.rank)} of ${totalDriverCount}` : '—'}
                           </td>
                         </tr>
                       )
@@ -340,6 +341,7 @@ export default function MetricsPage() {
                                     <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: rank <= 5 ? 'var(--green)' : rank <= 10 ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.04em', lineHeight:1 }}>
                                       {rank ?? '—'}
                                     </div>
+                                    <div style={{ fontSize:10, color:'var(--dim)', marginTop:1 }}>of {totalDriverCount}</div>
                                     <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
                                       {pick.drivers?.driver_name}
                                     </div>
@@ -434,7 +436,7 @@ export default function MetricsPage() {
                                       {pick.drivers?.driver_name}
                                     </div>
                                     <div style={{ fontSize:10, color:'var(--dim)' }}>
-                                      Rank {rank} ÷ Overall Pick {pickPos}
+                                      #{rank} of {totalDriverCount} ÷ Pick {pickPos}
                                     </div>
                                   </div>
                                 ) : pick ? (

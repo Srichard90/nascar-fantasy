@@ -17,6 +17,7 @@ export default function WeeklyDetailPage() {
   const [drivers,    setDrivers]    = useState([])   // sorted by car number
   const [races,      setRaces]      = useState([])   // sorted by week_number
   const [resultMap,  setResultMap]  = useState({})   // { race_id: { driver_id: finish_position } }
+  const [driverStats, setDriverStats] = useState({})   // { driver_id: { total, rank } }
   const [loading,    setLoading]    = useState(true)
   const [dataLoad,   setDataLoad]   = useState(false)
 
@@ -42,6 +43,7 @@ export default function WeeklyDetailPage() {
     setDrivers([])
     setRaces([])
     setResultMap({})
+    setDriverStats({})
 
     let cancelled = false
 
@@ -92,7 +94,27 @@ export default function WeeklyDetailPage() {
             })
           }))
 
-          if (!cancelled) setResultMap({ ...rm })
+          if (!cancelled) {
+            setResultMap({ ...rm })
+
+            // Compute season totals per driver (sum finish positions across all races)
+            const totals = {}
+            Object.values(rm).forEach(raceResults => {
+              Object.entries(raceResults).forEach(([driverId, res]) => {
+                const id = parseInt(driverId, 10)
+                totals[id] = (totals[id] || 0) + res.pos
+              })
+            })
+
+            // Rank all drivers by total (lower = better)
+            const ranked = Object.entries(totals)
+              .map(([id, total]) => ({ id: parseInt(id, 10), total }))
+              .sort((a, b) => a.total - b.total)
+
+            const stats = {}
+            ranked.forEach((d, i) => { stats[d.id] = { total: d.total, rank: i + 1 } })
+            setDriverStats(stats)
+          }
         }
       } catch (err) {
         console.error('Weekly detail load error:', err)
@@ -173,6 +195,8 @@ export default function WeeklyDetailPage() {
             <colgroup>
               <col style={{ width:180 }} />
               <col style={{ width:70 }} />
+              <col style={{ width:80 }} />
+              <col style={{ width:70 }} />
               {races.map(r => <col key={r.race_id} style={{ width:90 }} />)}
             </colgroup>
 
@@ -202,6 +226,28 @@ export default function WeeklyDetailPage() {
                   textTransform:'uppercase', color:'var(--muted)',
                   position:'sticky', left:180, zIndex:3,
                 }}>#</th>
+                <th style={{
+                  background:'var(--surface2)',
+                  borderBottom:'1px solid var(--border)',
+                  borderRight:'1px solid var(--border)',
+                  padding:'10px 10px',
+                  textAlign:'center',
+                  fontFamily:"'Barlow Condensed', sans-serif",
+                  fontSize:13, fontWeight:700, letterSpacing:'0.08em',
+                  textTransform:'uppercase', color:'var(--muted)',
+                  whiteSpace:'nowrap',
+                }}>Total Pts</th>
+                <th style={{
+                  background:'var(--surface2)',
+                  borderBottom:'1px solid var(--border)',
+                  borderRight:'2px solid var(--border2)',
+                  padding:'10px 10px',
+                  textAlign:'center',
+                  fontFamily:"'Barlow Condensed', sans-serif",
+                  fontSize:13, fontWeight:700, letterSpacing:'0.08em',
+                  textTransform:'uppercase', color:'var(--muted)',
+                  whiteSpace:'nowrap',
+                }}>Rank</th>
                 {races.map(r => (
                   <th key={r.race_id} style={{
                     background:'var(--surface2)',
@@ -236,6 +282,8 @@ export default function WeeklyDetailPage() {
                   padding:'4px 8px 8px',
                   position:'sticky', left:180, zIndex:3,
                 }} />
+                <th style={{ background:'var(--surface2)', borderBottom:'2px solid var(--border)', borderRight:'1px solid var(--border)', padding:'4px 8px 8px' }} />
+                <th style={{ background:'var(--surface2)', borderBottom:'2px solid var(--border)', borderRight:'1px solid var(--border)', padding:'4px 8px 8px' }} />
                 {races.map(r => (
                   <th key={r.race_id} style={{
                     background:'var(--surface2)',
@@ -283,6 +331,41 @@ export default function WeeklyDetailPage() {
                     background: di % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
                   }}>
                     {d.car_number}
+                  </td>
+
+                  {/* Season total points */}
+                  <td style={{
+                    padding:'9px 10px',
+                    borderRight:'1px solid var(--border)',
+                    borderBottom:'1px solid var(--border)',
+                    textAlign:'center',
+                    fontFamily:"'Bebas Neue', sans-serif",
+                    fontSize:16,
+                    color: driverStats[d.driver_id] ? 'var(--text)' : 'var(--dim)',
+                  }}>
+                    {driverStats[d.driver_id]?.total ?? '—'}
+                  </td>
+
+                  {/* Overall rank */}
+                  <td style={{
+                    padding:'9px 10px',
+                    borderRight:'1px solid var(--border)',
+                    borderBottom:'1px solid var(--border)',
+                    textAlign:'center',
+                    fontFamily:"'Barlow Condensed', sans-serif",
+                    fontWeight:700,
+                    fontSize:14,
+                    color: (() => {
+                      const r = driverStats[d.driver_id]?.rank
+                      if (!r) return 'var(--dim)'
+                      if (r <= 3) return '#f5c518'
+                      if (r <= 10) return '#22c55e'
+                      return 'var(--muted)'
+                    })(),
+                  }}>
+                    {driverStats[d.driver_id]?.rank
+                      ? `${driverStats[d.driver_id].rank} / ${Object.keys(driverStats).length}`
+                      : '—'}
                   </td>
 
                   {/* Result per race */}
