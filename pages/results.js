@@ -21,7 +21,7 @@ export default function ResultsPage() {
 
   useEffect(() => {
     async function init() {
-      const { data: s } = await supabase.from('seasons').select('*').single()
+      const { data: s } = await supabase.from('seasons').select('*').eq('is_active', true).single()
       setSeason(s)
       if (!s) { setLoading(false); return }
       const { data: r } = await supabase.from('races').select('*').eq('season_id',s.season_id).eq('is_complete',true).order('week_number',{ascending:false})

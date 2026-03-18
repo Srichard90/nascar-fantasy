@@ -26,7 +26,7 @@ export default function StandingsPage() {
 
   async function fetchData() {
     const { data: s } = await supabase
-      .from('seasons').select('*').single()
+      .from('seasons').select('*').eq('is_active', true).single()
     setSeason(s)
     if (!s) { setLoading(false); return }
 
