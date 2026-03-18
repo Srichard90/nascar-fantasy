@@ -196,6 +196,7 @@ function AdminPanel() {
         <Tab label="⚙️ Setup"    active={tab==='setup'}   onClick={()=>setTab('setup')} />
         <Tab label="🚗 Drivers"  active={tab==='drivers'} onClick={()=>setTab('drivers')} />
         <Tab label="🏎️ Races"   active={tab==='races'}   onClick={()=>setTab('races')} />
+        <Tab label="🔄 Subs"    active={tab==='subs'}    onClick={()=>setTab('subs')} />
         <Tab label="📋 Results" active={tab==='results'} onClick={()=>setTab('results')} />
       </div>
 
@@ -209,6 +210,7 @@ function AdminPanel() {
         {tab==='setup'   && <SetupTab   season={season} players={players} session={session} reload={loadAll} flash={flash} boom={boom} />}
         {tab==='drivers' && <DriversTab season={season} drivers={drivers} reload={loadAll} flash={flash} boom={boom} />}
         {tab==='races'   && <RacesTab   season={season} races={races}     reload={loadAll} flash={flash} boom={boom} />}
+        {tab==='subs'    && <SubsTab    season={season} players={players} drivers={drivers} races={races} reload={loadAll} flash={flash} boom={boom} />}
         {tab==='results' && <ResultsTab season={season} races={races} drivers={drivers} session={session} reload={loadAll} flash={flash} boom={boom} />}
       </div>
     </div>
@@ -663,6 +665,297 @@ function DriversTab({ season, drivers, reload, flash, boom }) {
           </div>
         )}
       </section>
+    </div>
+  )
+}
+
+
+// ── SUBS TAB ───────────────────────────────────────────────────
+function SubsTab({ season, players, drivers, races, reload, flash, boom }) {
+  const [subs,       setSubs]       = useState([])
+  const [player,     setPlayer]     = useState('')
+  const [origDriver, setOrigDriver] = useState('')
+  const [subDriver,  setSubDriver]  = useState('')
+  const [startWeek,  setStartWeek]  = useState('')
+  const [notes,      setNotes]      = useState('')
+  const [busy,       setBusy]       = useState(false)
+
+  const completedWeeks = [...races]
+    .filter(r => r.is_complete)
+    .sort((a, b) => a.week_number - b.week_number)
+
+  const nextWeek = completedWeeks.length
+    ? completedWeeks[completedWeeks.length - 1].week_number
+    : 1
+
+  async function loadSubs() {
+    if (!season) return
+    const { data } = await supabase
+      .from('driver_substitutions')
+      .select(`
+        *,
+        players(player_name),
+        original_driver:drivers!driver_substitutions_original_driver_id_fkey(driver_name, car_number),
+        sub_driver:drivers!driver_substitutions_sub_driver_id_fkey(driver_name, car_number)
+      `)
+      .eq('season_id', season.season_id)
+      .order('start_week', { ascending: false })
+    setSubs(data || [])
+  }
+
+  useEffect(() => { loadSubs() }, [season])
+
+  // Sorted drivers for dropdowns
+  const sortedDrivers = [...(drivers || [])].sort((a, b) => {
+    const na = parseInt(a.car_number, 10), nb = parseInt(b.car_number, 10)
+    if (!isNaN(na) && !isNaN(nb)) return na - nb
+    return (a.car_number || '').localeCompare(b.car_number || '')
+  })
+
+  async function addSub() {
+    if (!origDriver || !subDriver || origDriver === subDriver) {
+      boom('Select two different drivers.'); return
+    }
+    setBusy(true)
+    const { error } = await supabase.from('driver_substitutions').insert({
+      season_id:          season.season_id,
+      player_id:          parseInt(player, 10),
+      original_driver_id: parseInt(origDriver, 10),
+      sub_driver_id:      parseInt(subDriver, 10),
+      start_week:         parseInt(startWeek || nextWeek, 10),
+      end_week:           null,
+      notes:              notes || null,
+    })
+    setBusy(false)
+    if (error) { boom(error.message); return }
+
+    // Re-score affected weeks so standings update immediately
+    const sw = parseInt(startWeek || nextWeek, 10)
+    await supabase.rpc
+      ? null  // trigger handles it on next result save
+      : null
+    setPlayer(''); setOrigDriver(''); setSubDriver(''); setStartWeek(''); setNotes('')
+    flash('Substitution added! Scores will update automatically on next result save.')
+    loadSubs()
+    reload()
+  }
+
+  async function endSub(subId, endWeek) {
+    setBusy(true)
+    const { error } = await supabase
+      .from('driver_substitutions')
+      .update({ end_week: endWeek })
+      .eq('sub_id', subId)
+    setBusy(false)
+    if (error) { boom(error.message); return }
+    flash('Substitution ended. Scores will update on next result save.')
+    loadSubs()
+    reload()
+  }
+
+  async function deleteSub(subId) {
+    await supabase.from('driver_substitutions').delete().eq('sub_id', subId)
+    flash('Substitution removed.')
+    loadSubs()
+    reload()
+  }
+
+  const activeSubs = subs.filter(s => s.end_week === null)
+  const pastSubs   = subs.filter(s => s.end_week !== null)
+
+  if (!season) return <p style={{ color:'var(--muted)', fontSize:14 }}>Create a season first.</p>
+
+  return (
+    <div style={{ maxWidth:640, display:'flex', flexDirection:'column', gap:32 }}>
+
+      {/* Explainer */}
+      <div style={{ background:'rgba(245,197,24,0.08)', border:'1px solid rgba(245,197,24,0.25)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--muted)', lineHeight:1.6 }}>
+        <strong style={{ color:'var(--gold)' }}>Injury Clause:</strong> When a drafted driver is injured, the player can
+        temporarily pick up a substitute. The sub's finish positions will be scored in place of the
+        injured driver for the affected weeks. The sub stays active until you set an end week.
+      </div>
+
+      {/* Add substitution form */}
+      <section>
+        <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 16px' }}>Add Substitution</h3>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+
+          <div>
+            <label style={lbl}>Player</label>
+            <select value={player} onChange={e=>setPlayer(e.target.value)} style={inp}>
+              <option value="">— select player —</option>
+              {players.map(p=>(
+                <option key={p.player_id} value={p.player_id}>{p.player_name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div>
+              <label style={lbl}>Injured Driver</label>
+              <select value={origDriver} onChange={e=>setOrigDriver(e.target.value)} style={inp}>
+                <option value="">— select driver —</option>
+                {sortedDrivers.map(d=>(
+                  <option key={d.driver_id} value={d.driver_id}>#{d.car_number} {d.driver_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Substitute Driver</label>
+              <select value={subDriver} onChange={e=>setSubDriver(e.target.value)} style={inp}>
+                <option value="">— select driver —</option>
+                {sortedDrivers.filter(d=>d.driver_id !== parseInt(origDriver,10)).map(d=>(
+                  <option key={d.driver_id} value={d.driver_id}>#{d.car_number} {d.driver_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'120px 1fr', gap:12 }}>
+            <div>
+              <label style={lbl}>Start Week</label>
+              <input
+                type="number" min={1}
+                value={startWeek || nextWeek}
+                onChange={e=>setStartWeek(e.target.value)}
+                style={inp}
+              />
+            </div>
+            <div>
+              <label style={lbl}>Notes (optional)</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={e=>setNotes(e.target.value)}
+                placeholder="e.g. Larson out with rib injury"
+                style={inp}
+              />
+            </div>
+          </div>
+
+          <div>
+            <button
+              onClick={addSub}
+              disabled={busy || !player || !origDriver || !subDriver}
+              style={{ ...btn('red'), opacity: busy || !player || !origDriver || !subDriver ? 0.4 : 1 }}
+            >
+              Add Substitution
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Active substitutions */}
+      <section>
+        <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 12px' }}>
+          Active Substitutions
+          {activeSubs.length > 0 && (
+            <span style={{ marginLeft:10, fontFamily:"'Barlow Condensed'", fontSize:16, color:'var(--gold)', fontWeight:400 }}>
+              {activeSubs.length} active
+            </span>
+          )}
+        </h3>
+
+        {activeSubs.length === 0 ? (
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'20px', textAlign:'center', color:'var(--dim)', fontSize:14 }}>
+            No active substitutions this season.
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {activeSubs.map(s => (
+              <div key={s.sub_id} style={{
+                background:'rgba(245,197,24,0.06)',
+                border:'1px solid rgba(245,197,24,0.3)',
+                borderRadius:10,
+                padding:'14px 16px',
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+                  <div>
+                    <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:18, color:'var(--text)', marginBottom:4 }}>
+                      {s.players?.player_name}
+                    </div>
+                    <div style={{ fontSize:14, color:'var(--muted)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <span style={{ color:'#f87171' }}>
+                        #{s.original_driver?.car_number} {s.original_driver?.driver_name}
+                      </span>
+                      <span style={{ color:'var(--dim)' }}>→</span>
+                      <span style={{ color:'var(--green)' }}>
+                        #{s.sub_driver?.car_number} {s.sub_driver?.driver_name}
+                      </span>
+                      <span style={{ color:'var(--dim)' }}>
+                        · From Week {s.start_week}
+                      </span>
+                    </div>
+                    {s.notes && (
+                      <div style={{ fontSize:12, color:'var(--dim)', marginTop:4, fontStyle:'italic' }}>{s.notes}</div>
+                    )}
+                  </div>
+                  <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <label style={{ ...lbl, margin:0, whiteSpace:'nowrap' }}>End Week:</label>
+                      <select
+                        defaultValue=""
+                        onChange={e => { if (e.target.value) endSub(s.sub_id, parseInt(e.target.value, 10)) }}
+                        style={{ ...inp, width:'auto', padding:'6px 10px', fontSize:13 }}
+                      >
+                        <option value="">— select —</option>
+                        {completedWeeks
+                          .filter(r => r.week_number >= s.start_week)
+                          .map(r => (
+                            <option key={r.race_id} value={r.week_number}>
+                              Week {r.week_number} — {r.race_name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => deleteSub(s.sub_id)}
+                      style={{ background:'transparent', border:'1px solid var(--border2)', borderRadius:7, padding:'6px 12px', color:'var(--red)', fontSize:12, cursor:'pointer', fontFamily:"'Barlow Condensed'", fontWeight:700, letterSpacing:'0.05em', whiteSpace:'nowrap' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Past substitutions */}
+      {pastSubs.length > 0 && (
+        <section>
+          <h3 style={{ fontSize:24, color:'var(--text)', margin:'0 0 12px' }}>Past Substitutions</h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {pastSubs.map(s => (
+              <div key={s.sub_id} style={{
+                background:'var(--bg)',
+                border:'1px solid var(--border)',
+                borderRadius:9,
+                padding:'12px 16px',
+                fontSize:14,
+                display:'flex',
+                justifyContent:'space-between',
+                alignItems:'center',
+                gap:12,
+                flexWrap:'wrap',
+              }}>
+                <div>
+                  <span style={{ fontWeight:600, color:'var(--text)' }}>{s.players?.player_name}</span>
+                  <span style={{ color:'var(--muted)', marginLeft:10 }}>
+                    #{s.original_driver?.car_number} {s.original_driver?.driver_name}
+                    <span style={{ color:'var(--dim)' }}> → </span>
+                    #{s.sub_driver?.car_number} {s.sub_driver?.driver_name}
+                  </span>
+                </div>
+                <span style={{ color:'var(--dim)', fontSize:13, whiteSpace:'nowrap' }}>
+                  Wk {s.start_week} – Wk {s.end_week}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
