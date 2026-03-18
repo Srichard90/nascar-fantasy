@@ -359,7 +359,6 @@ export default function MetricsPage() {
                 <div style={{ marginTop:12, fontSize:13, color:'var(--muted)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:'0.04em', display:'flex', gap:20, flexWrap:'wrap' }}>
                   <span><span style={{ color:'var(--green)' }}>■</span> Top 5 rank</span>
                   <span><span style={{ color:'var(--gold)' }}>■</span> Top 10 rank</span>
-                  <span>Heat shading: green = low rank (best), red = high rank (worst)</span>
                 </div>
               </div>
             )
@@ -416,9 +415,6 @@ export default function MetricsPage() {
                             const pickPos = pick ? pick.pick_number : roundIdx + 1
                             const eff = rank ? (rank / pickPos) : null
 
-                            // Heat: low eff (< 1) = green (good), high eff = red (bad)
-                            const bg = eff !== null ? heatColor(eff, minEff, maxEff) : 'transparent'
-
                             // Color text based on whether above/below 1.0
                             const textColor = eff === null ? 'var(--dim)'
                               : eff <= 1   ? 'var(--green)'
@@ -426,7 +422,7 @@ export default function MetricsPage() {
                               : '#f87171'
 
                             return (
-                              <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center', background: bg }}>
+                              <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center' }}>
                                 {pick && eff !== null ? (
                                   <div>
                                     <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: textColor, letterSpacing:'0.04em', lineHeight:1 }}>
