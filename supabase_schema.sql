@@ -18,10 +18,12 @@ CREATE TABLE IF NOT EXISTS seasons (
 
 CREATE TABLE IF NOT EXISTS drivers (
   driver_id   SERIAL PRIMARY KEY,
-  driver_name VARCHAR(100) NOT NULL UNIQUE,
+  season_id   INT          NOT NULL REFERENCES seasons(season_id),
+  driver_name VARCHAR(100) NOT NULL,
   car_number  VARCHAR(10),
   team        VARCHAR(150),
-  is_active   BOOLEAN      NOT NULL DEFAULT true
+  is_active   BOOLEAN      NOT NULL DEFAULT true,
+  UNIQUE(season_id, driver_name)
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -373,9 +375,14 @@ FOR EACH ROW EXECUTE FUNCTION update_scores_after_result();
 
 -- ============================================================
 --  SECTION 7: SEED DATA — 20 NASCAR Cup Drivers
+--  NOTE: Only runs if an active season already exists.
+--  Safe to skip — add drivers via Admin > Drivers tab instead.
 -- ============================================================
 
-INSERT INTO drivers (driver_name, car_number, team) VALUES
+INSERT INTO drivers (season_id, driver_name, car_number, team)
+SELECT s.season_id, v.driver_name, v.car_number, v.team
+FROM seasons s,
+(VALUES
   ('Kyle Larson',       '5',  'Hendrick Motorsports'),
   ('Chase Elliott',     '9',  'Hendrick Motorsports'),
   ('William Byron',     '24', 'Hendrick Motorsports'),
@@ -396,4 +403,6 @@ INSERT INTO drivers (driver_name, car_number, team) VALUES
   ('Austin Dillon',     '3',  'Richard Childress Racing'),
   ('Kyle Busch',        '8',  'Richard Childress Racing'),
   ('Chase Briscoe',     '14', 'Stewart-Haas Racing')
-ON CONFLICT (driver_name) DO NOTHING;
+) AS v(driver_name, car_number, team)
+WHERE s.is_active = true
+ON CONFLICT (season_id, driver_name) DO NOTHING;

@@ -60,7 +60,7 @@ export default function DraftPage() {
       .order('pick_number')
     setPicks(pks || [])
 
-    const { data: drv } = await supabase.from('drivers').select('*').eq('is_active',true).order('driver_name')
+    const { data: drv } = await supabase.from('drivers').select('*').eq('season_id', s.season_id).eq('is_active',true).order('driver_name')
     const taken = new Set((pks||[]).map(p=>p.driver_id))
     setAvailable((drv||[]).filter(d=>!taken.has(d.driver_id)))
     setLoading(false)
