@@ -189,16 +189,18 @@ export default function WeeklyDetailPage() {
                   fontSize:13, fontWeight:700, letterSpacing:'0.08em',
                   textTransform:'uppercase', color:'var(--muted)',
                   whiteSpace:'nowrap',
+                  position:'sticky', left:0, zIndex:3,
                 }}>Driver</th>
                 <th style={{
                   background:'var(--surface2)',
                   borderBottom:'1px solid var(--border)',
-                  borderRight:'1px solid var(--border2)',
+                  borderRight:'2px solid var(--border2)',
                   padding:'10px 8px',
                   textAlign:'center',
                   fontFamily:"'Barlow Condensed', sans-serif",
                   fontSize:13, fontWeight:700, letterSpacing:'0.08em',
                   textTransform:'uppercase', color:'var(--muted)',
+                  position:'sticky', left:180, zIndex:3,
                 }}>#</th>
                 {races.map(r => (
                   <th key={r.race_id} style={{
@@ -225,12 +227,14 @@ export default function WeeklyDetailPage() {
                   borderBottom:'2px solid var(--border)',
                   borderRight:'1px solid var(--border)',
                   padding:'4px 14px 8px',
+                  position:'sticky', left:0, zIndex:3,
                 }} />
                 <th style={{
                   background:'var(--surface2)',
                   borderBottom:'2px solid var(--border)',
-                  borderRight:'1px solid var(--border2)',
+                  borderRight:'2px solid var(--border2)',
                   padding:'4px 8px 8px',
+                  position:'sticky', left:180, zIndex:3,
                 }} />
                 {races.map(r => (
                   <th key={r.race_id} style={{
@@ -261,6 +265,8 @@ export default function WeeklyDetailPage() {
                     borderBottom:'1px solid var(--border)',
                     fontWeight:600, fontSize:14, color:'var(--text)',
                     whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                    position:'sticky', left:0, zIndex:1,
+                    background: di % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
                   }}>
                     {d.driver_name}
                   </td>
@@ -268,11 +274,13 @@ export default function WeeklyDetailPage() {
                   {/* Car number */}
                   <td style={{
                     padding:'9px 8px',
-                    borderRight:'1px solid var(--border2)',
+                    borderRight:'2px solid var(--border2)',
                     borderBottom:'1px solid var(--border)',
                     textAlign:'center',
                     fontFamily:"'Barlow Condensed', sans-serif",
                     fontWeight:700, fontSize:14, color:'var(--gold)',
+                    position:'sticky', left:180, zIndex:1,
+                    background: di % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
                   }}>
                     {d.car_number}
                   </td>
