@@ -116,26 +116,29 @@ export default function MetricsPage() {
           .eq('season_id', seasonId)
           .eq('is_complete', true)
 
-        // All results for those races
+        // All results for those races — fetch in parallel, collect safely
         let allResults = []
         if (races && races.length) {
-          await Promise.all(races.map(async race => {
+          const raceResults = await Promise.all(races.map(async race => {
             const { data: res } = await supabase
               .from('race_results')
               .select('driver_id, finish_position')
               .eq('race_id', race.race_id)
-            if (!cancelled) allResults = allResults.concat(res || [])
+            return res || []
           }))
+          allResults = raceResults.flat()
         }
 
         if (cancelled) return
 
         // Sum finish positions per driver (lower = better)
+        // Coerce driver_id to number for consistent key type
         const totals = {}
         const wins   = {}
         allResults.forEach(r => {
-          totals[r.driver_id] = (totals[r.driver_id] || 0) + r.finish_position
-          if (r.finish_position === 1) wins[r.driver_id] = (wins[r.driver_id] || 0) + 1
+          const did = parseInt(r.driver_id, 10)
+          totals[did] = (totals[did] || 0) + r.finish_position
+          if (r.finish_position === 1) wins[did] = (wins[did] || 0) + 1
         })
 
         // Rank ALL drivers by adjusted points (base - wins*10) — lower is better
@@ -266,7 +269,7 @@ export default function MetricsPage() {
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead>
                     <tr>
-                      {['Player','Best Driver','Total Pts','Rank','Worst Driver','Total Pts','Rank'].map((h,i) => (
+                      {['Player','Best Driver','Adj. Pts','Rank','Worst Driver','Adj. Pts','Rank'].map((h,i) => (
                         <th key={i} style={{
                           padding:'12px 16px', background:'var(--surface2)',
                           borderBottom:'1px solid var(--border)',
@@ -285,8 +288,9 @@ export default function MetricsPage() {
                       const withTotals = myPicks
                         .filter(p => driverTotals[p.driver_id] !== undefined)
                         .map(p => {
-                          const w = driverWins[p.driver_id] || 0
-                          return { ...p, total: driverTotals[p.driver_id], adjTotal: driverTotals[p.driver_id] - w * 10, rank: driverRanks[p.driver_id] }
+                          const did = parseInt(p.driver_id, 10)
+                          const w = driverWins[did] || 0
+                          return { ...p, total: driverTotals[did], adjTotal: (driverTotals[did] || 0) - w * 10, rank: driverRanks[did] }
                         })
                         .sort((a,b) => a.adjTotal - b.adjTotal)
 
@@ -304,7 +308,7 @@ export default function MetricsPage() {
                             <div style={{ color:'var(--gold)', fontSize:12 }}>#{best?.drivers?.car_number}</div>
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--green)' }}>
-                            {best?.total ?? '—'}
+                            {best?.adjTotal ?? '—'}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'var(--green)' }}>
                             {best?.rank ? ordinal(best.rank) : '—'}
@@ -315,7 +319,7 @@ export default function MetricsPage() {
                             <div style={{ color:'var(--gold)', fontSize:12 }}>#{worst?.drivers?.car_number}</div>
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'#f87171' }}>
-                            {worst?.total ?? '—'}
+                            {worst?.adjTotal ?? '—'}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'#f87171' }}>
                             {worst?.rank ? ordinal(worst.rank) : '—'}
