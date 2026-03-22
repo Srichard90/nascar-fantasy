@@ -468,7 +468,7 @@ export default function MetricsPage() {
                                       {pick.drivers?.driver_name}
                                     </div>
                                     <div style={{ fontSize:12, color:'var(--dim)', marginTop:2 }}>
-                                      Pick {pickPos} — {ordinal(rank)} place
+                                      {ordinal(rank)} place / Pick {pickPos}
                                     </div>
                                   </div>
                                 ) : pick ? (
