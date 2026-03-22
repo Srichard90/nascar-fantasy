@@ -35,6 +35,7 @@ export default function MetricsPage() {
   const [seasonId,    setSeasonId]    = useState(null)
   const [season,      setSeason]      = useState(null)
   const [metric,      setMetric]      = useState('bestworst')
+  const [useAdj,      setUseAdj]      = useState(true)   // toggle: adjusted vs base points
   const [loading,     setLoading]     = useState(true)
   const [dataLoad,    setDataLoad]    = useState(false)
 
@@ -247,6 +248,24 @@ export default function MetricsPage() {
               </button>
             ))}
           </div>
+          {/* Points mode toggle — only for metrics that support it */}
+          {['bestworst','draftperf','drafteff'].includes(metric) && (
+            <div style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end' }}>
+              <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)' }}>Points:</span>
+              {[{ label:'Adjusted', val:true }, { label:'Base', val:false }].map(opt => (
+                <button key={String(opt.val)} onClick={() => setUseAdj(opt.val)} style={{
+                  padding:'4px 12px', borderRadius:6,
+                  border:`1px solid ${useAdj === opt.val ? 'var(--gold)' : 'var(--border2)'}`,
+                  background: useAdj === opt.val ? 'rgba(245,197,24,0.12)' : 'transparent',
+                  color: useAdj === opt.val ? 'var(--gold)' : 'var(--dim)',
+                  fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:12,
+                  letterSpacing:'0.05em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.15s',
+                }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -263,13 +282,13 @@ export default function MetricsPage() {
             <div>
               <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Best &amp; Worst Driver</h2>
               <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                Based on total accumulated finish position points this season — lower is better.
+                Based on {useAdj ? 'adjusted points (Base Pts − Wins × 10)' : 'base finish position points'} this season — lower is better.
               </p>
               <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead>
                     <tr>
-                      {['Player','Best Driver','Adj. Pts','Rank','Worst Driver','Adj. Pts','Rank'].map((h,i) => (
+                      {['Player','Best Driver', useAdj ? 'Adj. Pts' : 'Base Pts','Rank','Worst Driver', useAdj ? 'Adj. Pts' : 'Base Pts','Rank'].map((h,i) => (
                         <th key={i} style={{
                           padding:'12px 16px', background:'var(--surface2)',
                           borderBottom:'1px solid var(--border)',
@@ -292,7 +311,7 @@ export default function MetricsPage() {
                           const w = driverWins[did] || 0
                           return { ...p, total: driverTotals[did], adjTotal: (driverTotals[did] || 0) - w * 10, rank: driverRanks[did] }
                         })
-                        .sort((a,b) => a.adjTotal - b.adjTotal)
+                        .sort((a,b) => useAdj ? a.adjTotal - b.adjTotal : a.total - b.total)
 
                       const best  = withTotals[0]
                       const worst = withTotals[withTotals.length - 1]
@@ -308,7 +327,7 @@ export default function MetricsPage() {
                             <div style={{ color:'var(--gold)', fontSize:12 }}>#{best?.drivers?.car_number}</div>
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--green)' }}>
-                            {best?.adjTotal ?? '—'}
+                            {useAdj ? (best?.adjTotal ?? '—') : (best?.total ?? '—')}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'var(--green)' }}>
                             {best?.rank ? ordinal(best.rank) : '—'}
@@ -319,7 +338,7 @@ export default function MetricsPage() {
                             <div style={{ color:'var(--gold)', fontSize:12 }}>#{worst?.drivers?.car_number}</div>
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'#f87171' }}>
-                            {worst?.adjTotal ?? '—'}
+                            {useAdj ? (worst?.adjTotal ?? '—') : (worst?.total ?? '—')}
                           </td>
                           <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'#f87171' }}>
                             {worst?.rank ? ordinal(worst.rank) : '—'}
@@ -349,7 +368,7 @@ export default function MetricsPage() {
               <div>
                 <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Draft Performance</h2>
                 <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  Current overall rank of each drafted driver among all {picks.length} drafted drivers this season — lower is better.
+                  Current overall rank of each drafted driver by {useAdj ? 'adjusted points (Base Pts − Wins × 10)' : 'base finish position points'} — lower is better.
                 </p>
                 <div style={{ overflowX:'auto', borderRadius:14, border:'1px solid var(--border)' }}>
                   <table style={{ borderCollapse:'collapse', width:'100%', minWidth: 140 + players.length * 120 }}>
@@ -426,7 +445,7 @@ export default function MetricsPage() {
               <div>
                 <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Draft Position Efficiency</h2>
                 <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  Current driver rank ÷ draft pick number. A value of <strong style={{ color:'var(--text)' }}>1.0</strong> means the driver is ranked exactly where they were drafted. <strong style={{ color:'var(--green)' }}>Below 1.0</strong> = outperforming draft position. <strong style={{ color:'#f87171' }}>Above 1.0</strong> = underperforming.
+                  Current driver rank (by {useAdj ? 'adjusted points' : 'base points'}) ÷ overall draft pick number. Below 1.0 = outperforming. Above 1.0 = underperforming.
                 </p>
                 <div style={{ overflowX:'auto', borderRadius:14, border:'1px solid var(--border)' }}>
                   <table style={{ borderCollapse:'collapse', width:'100%', minWidth: 140 + players.length * 120 }}>
@@ -551,14 +570,23 @@ export default function MetricsPage() {
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--surface2)' }}>
-                          {['Rank','#','Driver','Team','Season Total'].map((h, i) => (
-                            <th key={h} style={{
-                              padding:'12px 16px', borderBottom:'2px solid var(--border)',
-                              fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
-                              letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)',
-                              textAlign: i === 0 || i === 4 ? 'center' : 'left', whiteSpace:'nowrap',
-                            }}>{h}</th>
-                          ))}
+                          {[
+                              { label:'Rank', center:true },
+                              { label:'#', center:false },
+                              { label:'Driver', center:false },
+                              { label:'Team', center:false },
+                              { label:'Base Pts', center:true },
+                              { label:'Wins', center:true },
+                              { label:'Adj. Pts', center:true },
+                            ].map(h => (
+                              <th key={h.label} style={{
+                                padding:'12px 16px', borderBottom:'2px solid var(--border)',
+                                fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
+                                letterSpacing:'0.08em', textTransform:'uppercase',
+                                color: h.label === 'Adj. Pts' ? 'var(--gold)' : 'var(--muted)',
+                                textAlign: h.center ? 'center' : 'left', whiteSpace:'nowrap',
+                              }}>{h.label}</th>
+                            ))}
                         </tr>
                       </thead>
                       <tbody>
@@ -581,9 +609,17 @@ export default function MetricsPage() {
                             <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
                               {d.team || '—'}
                             </td>
+                            <td style={{ padding:'12px 16px', textAlign:'center', color:'var(--muted)', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, letterSpacing:'0.04em' }}>
+                              {d.total ?? '—'}
+                            </td>
                             <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--text)', letterSpacing:'0.04em' }}>
-                                {d.total ?? '—'}
+                              {(driverWins[d.driver_id] || 0) > 0
+                                ? <span style={{ background:'rgba(245,197,24,0.15)', color:'var(--gold)', borderRadius:6, padding:'2px 10px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14 }}>🏆 {driverWins[d.driver_id]}</span>
+                                : <span style={{ color:'var(--dim)', fontSize:14 }}>—</span>}
+                            </td>
+                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
+                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--gold)', letterSpacing:'0.04em' }}>
+                                {d.total !== null ? d.total - (driverWins[d.driver_id] || 0) * 10 : '—'}
                               </span>
                             </td>
                           </tr>
