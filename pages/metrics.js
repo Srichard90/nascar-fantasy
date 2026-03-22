@@ -7,6 +7,7 @@ const METRICS = [
   { id: 'draftperf',   label: 'Draft Performance',          icon: '🎯' },
   { id: 'drafteff',    label: 'Draft Position Efficiency',  icon: '⚡' },
   { id: 'available',   label: 'Available Drivers',          icon: '🚙' },
+  { id: 'rankings',    label: 'Driver Rankings',            icon: '🏁' },
 ]
 
 // ── Shared cell style helpers ──────────────────────────────────
@@ -571,6 +572,77 @@ export default function MetricsPage() {
                     </table>
                   </div>
                 )}
+              </div>
+            )
+          })()}
+
+          {/* ── METRIC 5: Driver Rankings ── */}
+          {metric === 'rankings' && (() => {
+            const allWithTotals = (allDrivers || [])
+              .filter(d => driverTotals[d.driver_id] !== undefined)
+              .map(d => ({ ...d, total: driverTotals[d.driver_id] }))
+              .sort((a, b) => a.total - b.total)
+
+            // Include drivers with no results at the bottom
+            const noResults = (allDrivers || [])
+              .filter(d => driverTotals[d.driver_id] === undefined)
+              .sort((a, b) => parseInt(a.car_number) - parseInt(b.car_number))
+
+            const ranked = [...allWithTotals, ...noResults]
+
+            return (
+              <div>
+                <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Driver Rankings</h2>
+                <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
+                  All {ranked.length} drivers ranked by total accumulated finish position points this season — lower is better.
+                </p>
+                <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                    <thead>
+                      <tr style={{ background:'var(--surface2)' }}>
+                        {['Rank','#','Driver','Team','Season Total'].map((h, i) => (
+                          <th key={h} style={{
+                            padding:'12px 16px', borderBottom:'2px solid var(--border)',
+                            fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
+                            letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)',
+                            textAlign: i === 0 || i === 4 ? 'center' : 'left', whiteSpace:'nowrap',
+                          }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ranked.map((d, i) => {
+                        const rank = driverTotals[d.driver_id] !== undefined ? i + 1 : null
+                        return (
+                          <tr key={d.driver_id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
+                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:20, letterSpacing:'0.04em',
+                                color: rank && rank <= 3 ? '#f5c518' : rank && rank <= 10 ? 'var(--green)' : 'var(--muted)' }}>
+                                {rank ?? '—'}
+                              </span>
+                            </td>
+                            <td style={{ padding:'12px 16px' }}>
+                              <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:15, color:'var(--gold)' }}>
+                                #{d.car_number}
+                              </span>
+                            </td>
+                            <td style={{ padding:'12px 16px', fontWeight:600, fontSize:15, color:'var(--text)' }}>
+                              {d.driver_name}
+                            </td>
+                            <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
+                              {d.team || '—'}
+                            </td>
+                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
+                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--text)', letterSpacing:'0.04em' }}>
+                                {d.total ?? '—'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )
           })()}
