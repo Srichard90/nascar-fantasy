@@ -354,11 +354,23 @@ export default function MetricsPage() {
 
           {/* ── METRIC 2: Draft Performance ── */}
           {metric === 'draftperf' && (() => {
-            // Collect all rank values for heat coloring
+            // Build live rank map based on toggle — either adjusted or base points
+            const liveRankEntries = Object.entries(driverTotals)
+              .map(([id, base]) => {
+                const did = parseInt(id, 10)
+                const w   = driverWins[did] || 0
+                return { id: did, score: useAdj ? base - w * 10 : base }
+              })
+              .sort((a, b) => a.score - b.score)
+            const liveRanks = {}
+            liveRankEntries.forEach((d, i) => { liveRanks[d.id] = i + 1 })
+
+            // Collect all rank values for optional heat coloring
             const allRanks = []
             players.forEach(pl => {
               playerPicksByRound(pl.player_id).forEach(p => {
-                if (driverRanks[p.driver_id]) allRanks.push(driverRanks[p.driver_id])
+                const r = liveRanks[parseInt(p.driver_id, 10)]
+                if (r) allRanks.push(r)
               })
             })
             const minRank = Math.min(...allRanks)
@@ -393,7 +405,7 @@ export default function MetricsPage() {
                           {players.map((pl, pi) => {
                             const myPicks = playerPicksByRound(pl.player_id)
                             const pick = myPicks[roundIdx]
-                            const rank = pick ? driverRanks[pick.driver_id] : null
+                            const rank = pick ? liveRanks[parseInt(pick.driver_id, 10)] : null
                             return (
                               <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center' }}>
                                 {pick ? (
@@ -425,15 +437,23 @@ export default function MetricsPage() {
 
           {/* ── METRIC 3: Draft Position Efficiency ── */}
           {metric === 'drafteff' && (() => {
-            // efficiency = rank / pick_position_overall
-            // pick_position_overall = round_number for that player's picks
-            // (1st pick = round 1, 2nd pick = round 2, etc.)
+            // Build live rank map based on toggle
+            const liveRankEntries = Object.entries(driverTotals)
+              .map(([id, base]) => {
+                const did = parseInt(id, 10)
+                const w   = driverWins[did] || 0
+                return { id: did, score: useAdj ? base - w * 10 : base }
+              })
+              .sort((a, b) => a.score - b.score)
+            const liveRanks = {}
+            liveRankEntries.forEach((d, i) => { liveRanks[d.id] = i + 1 })
+
             const allEff = []
             players.forEach(pl => {
               playerPicksByRound(pl.player_id).forEach((p, idx) => {
-                const rank = driverRanks[p.driver_id]
+                const rank = liveRanks[parseInt(p.driver_id, 10)]
                 if (rank) {
-                  const pickPos = idx + 1
+                  const pickPos = p.pick_number || idx + 1
                   allEff.push(rank / pickPos)
                 }
               })
@@ -470,7 +490,7 @@ export default function MetricsPage() {
                           {players.map((pl, pi) => {
                             const myPicks = playerPicksByRound(pl.player_id)
                             const pick = myPicks[roundIdx]
-                            const rank = pick ? driverRanks[pick.driver_id] : null
+                            const rank = pick ? liveRanks[parseInt(pick.driver_id, 10)] : null
                             const pickPos = pick ? pick.pick_number : roundIdx + 1
                             const eff = rank ? (rank / pickPos) : null
 
