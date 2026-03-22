@@ -47,6 +47,7 @@ export default function MetricsPage() {
   const [allDrivers,   setAllDrivers]   = useState([]) // all drivers in the season
   const [activeSubs,   setActiveSubs]   = useState([]) // currently active injury subs
   const [allSwaps,     setAllSwaps]     = useState([]) // all permanent swaps
+  const [driverWins,   setDriverWins]   = useState({}) // driver_id -> number of P1 finishes
 
   // Load seasons
   useEffect(() => {
@@ -131,8 +132,10 @@ export default function MetricsPage() {
 
         // Sum finish positions per driver (lower = better)
         const totals = {}
+        const wins   = {}
         allResults.forEach(r => {
           totals[r.driver_id] = (totals[r.driver_id] || 0) + r.finish_position
+          if (r.finish_position === 1) wins[r.driver_id] = (wins[r.driver_id] || 0) + 1
         })
 
         // Rank ALL drivers who have results this season (not just drafted)
@@ -151,6 +154,7 @@ export default function MetricsPage() {
         setAllDrivers(allDrivers || [])
         setActiveSubs(activeSubs || [])
         setAllSwaps(allSwaps || [])
+        setDriverWins(wins)
         setTotalDriverCount(totalDriverCount)
       } catch (err) {
         console.error('Metrics load error:', err)
@@ -578,12 +582,40 @@ export default function MetricsPage() {
 
           {/* ── METRIC 5: Driver Rankings ── */}
           {metric === 'rankings' && (() => {
+            // Build win counts per driver across all picks (respecting swaps/subs done in standings)
+            // For simplicity here use driverRanks which already ranks all drafted drivers —
+            // but for ALL drivers we just rank by adjusted points = total - wins*10
+            // We need per-driver win counts from race_results p1 joined to all season races
+            // We'll compute wins from driverTotals context — wins not stored per driver here,
+            // so we use driverRanks which was built from total points only.
+            // Add win tracking: count finish_position=1 per driver from allResults (not available here)
+            // Instead reuse the existing winsMap from picks context for drafted drivers.
+            // For ALL drivers we'll show base pts and rank by base pts (no per-driver win bonus outside fantasy)
+            // Actually: wins in fantasy are per-player not per-driver. Just show base total and rank by that.
+            // Per user request: base points = driverTotals, wins = race wins for that driver,
+            // adjusted = base - wins*10, ordered by adjusted.
+
+            // Build per-driver win count from p1Results stored in winsMap context —
+            // winsMap is per-player. We need raw driver win counts separately.
+            // We'll compute from driverRanks: rank was built from driverTotals (base finish pts).
+            // For driver wins we need a separate count. Since we don't store it separately,
+            // we'll pass it as part of allDrivers enrichment using picks data.
+            // Simplest: count times each driver_id appears in picks with a win credited —
+            // but that's per-player. For driver rankings wins = how many times that driver finished P1.
+            // We don't have that raw data here without re-fetching.
+            // Solution: use driverRanks (already ranked by total base pts) and show base pts only,
+            // noting wins isn't tracked per-driver in this context.
+            // --- REVISED: build driverWins from picks p1 logic in the component ---
+
             const allWithTotals = (allDrivers || [])
               .filter(d => driverTotals[d.driver_id] !== undefined)
-              .map(d => ({ ...d, total: driverTotals[d.driver_id] }))
-              .sort((a, b) => a.total - b.total)
+              .map(d => {
+                const basePts = driverTotals[d.driver_id]
+                const w       = driverWins[d.driver_id] || 0
+                return { ...d, basePts, wins: w, adjPts: basePts - w * 10 }
+              })
+              .sort((a, b) => a.adjPts - b.adjPts)
 
-            // Include drivers with no results at the bottom
             const noResults = (allDrivers || [])
               .filter(d => driverTotals[d.driver_id] === undefined)
               .sort((a, b) => parseInt(a.car_number) - parseInt(b.car_number))
@@ -594,25 +626,38 @@ export default function MetricsPage() {
               <div>
                 <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Driver Rankings</h2>
                 <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  All {ranked.length} drivers ranked by total accumulated finish position points this season — lower is better.
+                  All {ranked.length} drivers ranked by adjusted points (Base Pts − Wins × 10) — lower is better.
                 </p>
                 <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
                     <thead>
                       <tr style={{ background:'var(--surface2)' }}>
-                        {['Rank','#','Driver','Team','Season Total'].map((h, i) => (
-                          <th key={h} style={{
+                        {[
+                          { label:'Rank', center:true },
+                          { label:'#', center:false },
+                          { label:'Driver', center:false },
+                          { label:'Team', center:false },
+                          { label:'Base Pts', center:true },
+                          { label:'Wins', center:true },
+                          { label:'Adj. Pts', center:true },
+                        ].map((h, i) => (
+                          <th key={h.label} style={{
                             padding:'12px 16px', borderBottom:'2px solid var(--border)',
                             fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
-                            letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)',
-                            textAlign: i === 0 || i === 4 ? 'center' : 'left', whiteSpace:'nowrap',
-                          }}>{h}</th>
+                            letterSpacing:'0.08em', textTransform:'uppercase',
+                            color: h.label === 'Adj. Pts' ? 'var(--gold)' : 'var(--muted)',
+                            textAlign: h.center ? 'center' : 'left', whiteSpace:'nowrap',
+                          }}>{h.label}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {ranked.map((d, i) => {
-                        const rank = driverTotals[d.driver_id] !== undefined ? i + 1 : null
+                        const hasResult = driverTotals[d.driver_id] !== undefined
+                        const rank     = hasResult ? i + 1 : null
+                        const basePts  = driverTotals[d.driver_id] ?? null
+                        const wins     = driverWins[d.driver_id] || 0
+                        const adjPts   = basePts !== null ? basePts - wins * 10 : null
                         return (
                           <tr key={d.driver_id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                             <td style={{ padding:'12px 16px', textAlign:'center' }}>
@@ -632,9 +677,17 @@ export default function MetricsPage() {
                             <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
                               {d.team || '—'}
                             </td>
+                            <td style={{ padding:'12px 16px', textAlign:'center', color:'var(--muted)', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, letterSpacing:'0.04em' }}>
+                              {basePts ?? '—'}
+                            </td>
                             <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--text)', letterSpacing:'0.04em' }}>
-                                {d.total ?? '—'}
+                              {wins > 0
+                                ? <span style={{ background:'rgba(245,197,24,0.15)', color:'var(--gold)', borderRadius:6, padding:'2px 10px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14 }}>🏆 {wins}</span>
+                                : <span style={{ color:'var(--dim)', fontSize:14 }}>—</span>}
+                            </td>
+                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
+                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color: rank && rank <= 3 ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.04em' }}>
+                                {adjPts ?? '—'}
                               </span>
                             </td>
                           </tr>
