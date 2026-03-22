@@ -138,10 +138,14 @@ export default function MetricsPage() {
           if (r.finish_position === 1) wins[r.driver_id] = (wins[r.driver_id] || 0) + 1
         })
 
-        // Rank ALL drivers who have results this season (not just drafted)
+        // Rank ALL drivers by adjusted points (base - wins*10) — lower is better
         const allDriversWithTotals = Object.entries(totals)
-          .map(([id, total]) => ({ id: parseInt(id, 10), total }))
-          .sort((a, b) => a.total - b.total)
+          .map(([id, total]) => {
+            const did = parseInt(id, 10)
+            const w   = wins[did] || 0
+            return { id: did, total, adjTotal: total - w * 10 }
+          })
+          .sort((a, b) => a.adjTotal - b.adjTotal)
 
         const ranks = {}
         const totalDriverCount = allDriversWithTotals.length
@@ -280,8 +284,11 @@ export default function MetricsPage() {
                       const myPicks = playerPicksByRound(pl.player_id)
                       const withTotals = myPicks
                         .filter(p => driverTotals[p.driver_id] !== undefined)
-                        .map(p => ({ ...p, total: driverTotals[p.driver_id], rank: driverRanks[p.driver_id] }))
-                        .sort((a,b) => a.total - b.total)
+                        .map(p => {
+                          const w = driverWins[p.driver_id] || 0
+                          return { ...p, total: driverTotals[p.driver_id], adjTotal: driverTotals[p.driver_id] - w * 10, rank: driverRanks[p.driver_id] }
+                        })
+                        .sort((a,b) => a.adjTotal - b.adjTotal)
 
                       const best  = withTotals[0]
                       const worst = withTotals[withTotals.length - 1]
@@ -500,11 +507,14 @@ export default function MetricsPage() {
               ...swapInIds,
             ])
 
-            // Global rank across ALL drivers
+            // Global rank across ALL drivers by adjusted points
             const allWithTotals = (allDrivers || [])
               .filter(d => driverTotals[d.driver_id] !== undefined)
-              .map(d => ({ ...d, total: driverTotals[d.driver_id] }))
-              .sort((a, b) => a.total - b.total)
+              .map(d => {
+                const w = driverWins[d.driver_id] || 0
+                return { ...d, total: driverTotals[d.driver_id], adjTotal: driverTotals[d.driver_id] - w * 10 }
+              })
+              .sort((a, b) => a.adjTotal - b.adjTotal)
             const allRankMap = {}
             allWithTotals.forEach((d, i) => { allRankMap[d.driver_id] = i + 1 })
 
@@ -512,10 +522,12 @@ export default function MetricsPage() {
               .filter(d => !unavailableIds.has(d.driver_id))
               .map(d => ({ ...d, total: driverTotals[d.driver_id] ?? null, rank: allRankMap[d.driver_id] ?? null }))
               .sort((a, b) => {
-                if (a.total === null && b.total === null) return 0
-                if (a.total === null) return 1
-                if (b.total === null) return -1
-                return a.total - b.total
+                const aAdj = a.total !== null ? a.total - (driverWins[a.driver_id] || 0) * 10 : null
+                const bAdj = b.total !== null ? b.total - (driverWins[b.driver_id] || 0) * 10 : null
+                if (aAdj === null && bAdj === null) return 0
+                if (aAdj === null) return 1
+                if (bAdj === null) return -1
+                return aAdj - bAdj
               })
 
             return (
@@ -582,30 +594,24 @@ export default function MetricsPage() {
 
           {/* ── METRIC 5: Driver Rankings ── */}
           {metric === 'rankings' && (() => {
-            // Build win counts per driver across all picks (respecting swaps/subs done in standings)
-            // For simplicity here use driverRanks which already ranks all drafted drivers —
-            // but for ALL drivers we just rank by adjusted points = total - wins*10
-            // We need per-driver win counts from race_results p1 joined to all season races
-            // We'll compute wins from driverTotals context — wins not stored per driver here,
-            // so we use driverRanks which was built from total points only.
-            // Add win tracking: count finish_position=1 per driver from allResults (not available here)
-            // Instead reuse the existing winsMap from picks context for drafted drivers.
-            // For ALL drivers we'll show base pts and rank by base pts (no per-driver win bonus outside fantasy)
-            // Actually: wins in fantasy are per-player not per-driver. Just show base total and rank by that.
-            // Per user request: base points = driverTotals, wins = race wins for that driver,
-            // adjusted = base - wins*10, ordered by adjusted.
+            // Build driver -> player ownership map (respecting swaps)
+            const driverToPlayer = {}
+            const swappedOutInRankings = new Set((allSwaps || []).map(s => s.original_driver_id))
+            const swapInMap = {}
+            ;(allSwaps || []).forEach(s => { swapInMap[s.swap_driver_id] = s.player_id })
 
-            // Build per-driver win count from p1Results stored in winsMap context —
-            // winsMap is per-player. We need raw driver win counts separately.
-            // We'll compute from driverRanks: rank was built from driverTotals (base finish pts).
-            // For driver wins we need a separate count. Since we don't store it separately,
-            // we'll pass it as part of allDrivers enrichment using picks data.
-            // Simplest: count times each driver_id appears in picks with a win credited —
-            // but that's per-player. For driver rankings wins = how many times that driver finished P1.
-            // We don't have that raw data here without re-fetching.
-            // Solution: use driverRanks (already ranked by total base pts) and show base pts only,
-            // noting wins isn't tracked per-driver in this context.
-            // --- REVISED: build driverWins from picks p1 logic in the component ---
+            ;(picks || []).forEach(pk => {
+              if (!swappedOutInRankings.has(pk.driver_id)) {
+                // original driver still on this player's team
+                const pl = players.find(p => p.player_id === pk.player_id)
+                if (pl) driverToPlayer[pk.driver_id] = pl.player_name
+              }
+            })
+            // swap-in drivers belong to the player who swapped
+            Object.entries(swapInMap).forEach(([did, pid]) => {
+              const pl = players.find(p => p.player_id === pid)
+              if (pl) driverToPlayer[parseInt(did, 10)] = pl.player_name
+            })
 
             const allWithTotals = (allDrivers || [])
               .filter(d => driverTotals[d.driver_id] !== undefined)
@@ -637,6 +643,7 @@ export default function MetricsPage() {
                           { label:'#', center:false },
                           { label:'Driver', center:false },
                           { label:'Team', center:false },
+                          { label:'Player', center:false },
                           { label:'Base Pts', center:true },
                           { label:'Wins', center:true },
                           { label:'Adj. Pts', center:true },
@@ -676,6 +683,14 @@ export default function MetricsPage() {
                             </td>
                             <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
                               {d.team || '—'}
+                            </td>
+                            <td style={{ padding:'12px 16px', fontSize:14 }}>
+                              {driverToPlayer[d.driver_id]
+                                ? <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14,
+                                    color: PLAYER_COLORS[players.findIndex(p => p.player_name === driverToPlayer[d.driver_id]) % 5] }}>
+                                    {driverToPlayer[d.driver_id]}
+                                  </span>
+                                : <span style={{ color:'var(--dim)' }}>—</span>}
                             </td>
                             <td style={{ padding:'12px 16px', textAlign:'center', color:'var(--muted)', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, letterSpacing:'0.04em' }}>
                               {basePts ?? '—'}
