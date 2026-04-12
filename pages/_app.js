@@ -1,4 +1,5 @@
 import '../styles/globals.css'
+import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 
@@ -15,6 +16,10 @@ export default function App({ Component, pageProps }) {
   const router = useRouter()
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <Head>
+        <title>NASCAR-x Fantasy</title>
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏁</text></svg>" />
+      </Head>
 
       {/* Top nav */}
       <nav style={{
