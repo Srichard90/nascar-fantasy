@@ -459,6 +459,7 @@ export default function MetricsPage() {
                 <div style={{ marginTop:12, fontSize:13, color:'var(--muted)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:'0.04em', display:'flex', gap:20, flexWrap:'wrap' }}>
                   <span><span style={{ color:'var(--green)' }}>■</span> Top 5 rank</span>
                   <span><span style={{ color:'var(--gold)' }}>■</span> Top 10 rank</span>
+                  <span><span style={{ color:'var(--gold)' }}>■ *</span> Active sub or permanent swap in this slot</span>
                 </div>
               </div>
             )
@@ -563,6 +564,7 @@ export default function MetricsPage() {
                 <div style={{ marginTop:12, fontSize:13, color:'var(--muted)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:'0.04em', display:'flex', gap:20, flexWrap:'wrap' }}>
                   <span><span style={{ color:'var(--green)' }}>■</span> ≤ 1.0 — outperforming draft position</span>
                   <span><span style={{ color:'#f87171' }}>■</span> &gt; 2.0 — significantly underperforming</span>
+                  <span><span style={{ color:'var(--gold)' }}>■ *</span> Active sub or permanent swap in this slot</span>
                 </div>
               </div>
             )
