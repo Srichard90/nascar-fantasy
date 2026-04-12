@@ -263,7 +263,6 @@ function HistoricalDraft({ season }) {
 export default function DraftPage() {
   const [allSeasons,  setAllSeasons]  = useState([])
   const [seasonId,    setSeasonId]    = useState(null)
-  const [season,      setSeason]      = useState(null)
   const [loading,     setLoading]     = useState(true)
 
   // Live draft state (active season only)
@@ -326,15 +325,12 @@ export default function DraftPage() {
     setDataLoading(false)
   }, [allSeasons, seasonId])
 
-  // When seasonId changes, update current season object
+  // When seasonId changes, trigger data load for active season
   useEffect(() => {
     if (!allSeasons.length || !seasonId) return
-    const s = allSeasons.find(x => x.season_id === seasonId)
-    setSeason(s || null)
-    setDataLoading(true)
-
     const active = allSeasons.find(x => x.is_active)
-    if (s?.season_id === active?.season_id) {
+    setDataLoading(true)
+    if (seasonId === active?.season_id) {
       fetchState()
     } else {
       setLoading(false)
@@ -363,7 +359,9 @@ export default function DraftPage() {
     if (e || !data?.success) setError(data?.error || e?.message || 'Pick failed.')
   }
 
-  const isActiveSeason = (allSeasons || []).find(s => s.is_active)?.season_id === seasonId
+  const activeSeason  = (allSeasons || []).find(s => s.is_active)
+  const isActiveSeason = activeSeason?.season_id === seasonId
+  const season        = allSeasons.find(x => x.season_id === seasonId) || null
   const totalPicks    = session?.total_drivers  || 20
   const totalPlayers  = session?.total_players  || 0
   const currentPick   = session?.current_pick_num || 1
