@@ -270,6 +270,7 @@ export default function DraftPage() {
   const [session,    setSession]    = useState(null)
   const [players,    setPlayers]    = useState([])
   const [picks,      setPicks]      = useState([])
+  const [swaps,      setSwaps]      = useState([])
   const [available,  setAvailable]  = useState([])
   const [myPlayer,   setMyPlayer]   = useState(null)
   const [picking,    setPicking]    = useState(false)
@@ -313,6 +314,12 @@ export default function DraftPage() {
       .eq('draft_session_id', sess.draft_session_id)
       .order('pick_number')
     setPicks(pks || [])
+
+    const { data: sw } = await supabase
+      .from('driver_swaps')
+      .select('*, swap_driver:drivers!driver_swaps_swap_driver_id_fkey(driver_name, car_number)')
+      .eq('season_id', active.season_id)
+    setSwaps(sw || [])
 
     const { data: drv } = await supabase
       .from('drivers').select('*').eq('season_id', active.season_id).order('driver_name')
@@ -543,7 +550,7 @@ export default function DraftPage() {
                     {/* Draft board */}
                     <div>
                       <h2 style={{ fontSize:24, margin:'0 0 12px', color:'var(--text)' }}>Draft Board</h2>
-                      <DraftBoard players={players} picks={picks} session={session} />
+                      <DraftBoard players={players} picks={picks} session={session} swaps={swaps} />
                     </div>
                   </div>
                 </>
