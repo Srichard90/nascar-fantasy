@@ -272,7 +272,6 @@ export default function DraftPage() {
   const [picks,      setPicks]      = useState([])
   const [swaps,      setSwaps]      = useState([])
   const [available,  setAvailable]  = useState([])
-  const [myPlayer,   setMyPlayer]   = useState(null)
   const [picking,    setPicking]    = useState(false)
   const [error,      setError]      = useState('')
   const [search,     setSearch]     = useState('')
@@ -289,8 +288,6 @@ export default function DraftPage() {
       else setLoading(false)
     }
     init()
-    const saved = localStorage.getItem('nascar_my_player_id')
-    if (saved) setMyPlayer(parseInt(saved, 10))
   }, [])
 
   // Load active season draft data
@@ -359,9 +356,9 @@ export default function DraftPage() {
   }, [fetchState, allSeasons, seasonId])
 
   async function makePick(driver) {
-    if (!myPlayer || picking) return
+    if (!onClock || picking) return
     setError(''); setPicking(true)
-    const { data, error: e } = await supabase.rpc('make_draft_pick',{ p_player_id:myPlayer, p_driver_id:driver.driver_id })
+    const { data, error: e } = await supabase.rpc('make_draft_pick',{ p_player_id:onClock.player_id, p_driver_id:driver.driver_id })
     setPicking(false)
     if (e || !data?.success) setError(data?.error || e?.message || 'Pick failed.')
   }
@@ -372,7 +369,6 @@ export default function DraftPage() {
   const currentPick   = session?.current_pick_num || 1
   const isComplete    = session?.is_complete || false
   const onClock       = session && !isComplete && players.length ? getPickOwner(currentPick, totalPlayers, players) : null
-  const isMyTurn      = onClock?.player_id === myPlayer
   const round         = Math.ceil(currentPick / (totalPlayers||1))
   const teamMap       = {}
   players.forEach(p => { teamMap[p.player_id] = [] })
@@ -422,86 +418,63 @@ export default function DraftPage() {
                 </div>
               ) : (
                 <>
-                  {/* "I am" row */}
-                  <div style={{
-                    background:'var(--surface)',
-                    border:'1px solid var(--border)',
-                    borderRadius:12,
-                    padding:'14px 18px',
-                    display:'flex',
-                    flexWrap:'wrap',
-                    gap:10,
-                    alignItems:'center',
-                    marginBottom:20,
-                  }}>
-                    <span style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', whiteSpace:'nowrap' }}>
-                      I am:
-                    </span>
-                    {players.map((p, i) => {
-                      const active = myPlayer === p.player_id
-                      return (
-                        <button key={p.player_id} onClick={() => {
-                          setMyPlayer(p.player_id)
-                          localStorage.setItem('nascar_my_player_id', p.player_id)
-                        }} style={{
-                          padding:'6px 16px',
-                          borderRadius:99,
-                          border:`2px solid ${active ? PLAYER_COLORS[i%5] : 'var(--border2)'}`,
-                          background: active ? PLAYER_COLORS[i%5]+'22' : 'transparent',
-                          color: active ? PLAYER_COLORS[i%5] : 'var(--muted)',
-                          fontFamily:"'Barlow Condensed', sans-serif",
-                          fontWeight:700,
-                          fontSize:14,
-                          letterSpacing:'0.05em',
-                          cursor:'pointer',
-                          transition:'all 0.15s',
-                        }}>
-                          {p.player_name}
-                        </button>
-                      )
-                    })}
-                    {!myPlayer && <span style={{ color:'var(--gold)', fontSize:13 }}>← Select your name to pick</span>}
-                  </div>
-
                   {/* Status card */}
-                  <div style={{
-                    background: isComplete ? 'rgba(34,197,94,0.08)' : isMyTurn ? 'rgba(232,25,44,0.1)' : 'var(--surface)',
-                    border:`2px solid ${isComplete ? 'var(--green)' : isMyTurn ? 'var(--red)' : 'var(--border)'}`,
-                    borderRadius:14,
-                    padding:'20px 24px',
-                    marginBottom:24,
-                  }} className={isMyTurn ? 'on-clock' : ''}>
-                    {isComplete ? (
-                      <div style={{ textAlign:'center' }}>
-                        <div style={{ fontSize:36, marginBottom:4 }}>🏁</div>
-                        <h3 style={{ fontSize:28, color:'var(--green)', margin:0 }}>Draft Complete!</h3>
-                        <p style={{ color:'var(--muted)', margin:'4px 0 0', fontSize:14 }}>All 20 drivers have been selected.</p>
-                      </div>
-                    ) : (
-                      <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', alignItems:'center', gap:16 }}>
-                        <div>
-                          <div style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:4 }}>On the Clock</div>
-                          <div style={{ fontFamily:"'Bebas Neue'", fontSize:36, color: isMyTurn ? 'var(--red)' : 'var(--text)', letterSpacing:'0.04em' }}>
-                            {onClock?.player_name || '—'}{isMyTurn ? " — That's You!" : ''}
+                  {isComplete ? (
+                    <div style={{
+                      background:'rgba(34,197,94,0.08)',
+                      border:'2px solid var(--green)',
+                      borderRadius:14,
+                      padding:'28px 24px',
+                      marginBottom:24,
+                      textAlign:'center',
+                    }}>
+                      <div style={{ fontSize:40, marginBottom:6 }}>🏁</div>
+                      <h3 style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:36, color:'var(--green)', margin:'0 0 4px', letterSpacing:'0.04em' }}>Draft Complete!</h3>
+                      <p style={{ color:'var(--muted)', margin:0, fontSize:14 }}>All {totalPicks} drivers have been selected.</p>
+                    </div>
+                  ) : (() => {
+                    const clockIdx  = players.findIndex(p => p.player_id === onClock?.player_id)
+                    const clockColor = clockIdx >= 0 ? PLAYER_COLORS[clockIdx % 5] : 'var(--text)'
+                    return (
+                      <div style={{
+                        background: `${clockColor}11`,
+                        border: `2px solid ${clockColor}`,
+                        borderRadius:14,
+                        padding:'20px 24px',
+                        marginBottom:20,
+                      }} className="on-clock">
+                        <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'space-between', alignItems:'center', gap:16 }}>
+                          {/* On the clock */}
+                          <div>
+                            <div style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--muted)', marginBottom:2 }}>
+                              🕐 On the Clock
+                            </div>
+                            <div style={{ fontFamily:"'Bebas Neue'", fontSize:42, color: clockColor, letterSpacing:'0.04em', lineHeight:1 }}>
+                              {onClock?.player_name || '—'}
+                            </div>
+                            <div style={{ fontFamily:"'Barlow Condensed'", fontSize:13, color:'var(--muted)', marginTop:4, letterSpacing:'0.04em' }}>
+                              Make your selection from the driver list
+                            </div>
+                          </div>
+                          {/* Stats */}
+                          <div style={{ display:'flex', gap:28, flexWrap:'wrap' }}>
+                            {[
+                              { label:'Pick',      value:`${currentPick} / ${totalPicks}` },
+                              { label:'Round',     value:`${round} / ${session.total_rounds}` },
+                              { label:'Available', value:available.length },
+                            ].map(stat => (
+                              <div key={stat.label} style={{ textAlign:'center' }}>
+                                <div style={{ fontFamily:"'Barlow Condensed'", fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:2 }}>{stat.label}</div>
+                                <div style={{ fontFamily:"'Bebas Neue'", fontSize:30, color:'var(--text)', letterSpacing:'0.04em' }}>{stat.value}</div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                        <div style={{ display:'flex', gap:24, flexWrap:'wrap' }}>
-                          {[
-                            { label:'Pick',      value:`${currentPick} / ${totalPicks}` },
-                            { label:'Round',     value:`${round} / ${session.total_rounds}` },
-                            { label:'Available', value:available.length },
-                          ].map(stat => (
-                            <div key={stat.label} style={{ textAlign:'center' }}>
-                              <div style={{ fontFamily:"'Barlow Condensed'", fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--muted)', marginBottom:2 }}>{stat.label}</div>
-                              <div style={{ fontFamily:"'Bebas Neue'", fontSize:28, color:'var(--text)', letterSpacing:'0.04em' }}>{stat.value}</div>
-                            </div>
-                          ))}
-                        </div>
                       </div>
-                    )}
-                  </div>
+                    )
+                  })()}
 
-                  {isMyTurn && <div className="racing-bar" style={{ borderRadius:4, marginBottom:20 }} />}
+                  <div className="racing-bar" style={{ borderRadius:4, marginBottom:20, display: isComplete ? 'none' : 'block' }} />
 
                   {error && (
                     <div style={{ background:'rgba(232,25,44,0.12)', border:'1px solid rgba(232,25,44,0.35)', color:'#ff6b7a', borderRadius:8, padding:'12px 16px', marginBottom:16, fontSize:14 }}>
@@ -533,8 +506,8 @@ export default function DraftPage() {
                                 </div>
                                 <div style={{ color:'var(--muted)', fontSize:12, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.team}</div>
                               </div>
-                              {isMyTurn && myPlayer && (
-                                <button onClick={() => makePick(d)} disabled={picking} style={{ flexShrink:0, background:'var(--red)', color:'#fff', border:'none', borderRadius:7, padding:'8px 16px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:13, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', opacity: picking ? 0.5 : 1 }}>
+                              {onClock && (
+                                <button onClick={() => makePick(d)} disabled={picking} style={{ flexShrink:0, background:'var(--red)', color:'#fff', border:'none', borderRadius:7, padding:'8px 16px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:13, letterSpacing:'0.06em', textTransform:'uppercase', cursor: picking ? 'not-allowed' : 'pointer', opacity: picking ? 0.5 : 1 }}>
                                   {picking ? '…' : 'Draft'}
                                 </button>
                               )}
