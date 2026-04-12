@@ -184,6 +184,28 @@ export default function MetricsPage() {
       .sort((a, b) => a.round_number - b.round_number)
   }
 
+  // Resolve the actual current driver for a pick slot (swap > sub > original)
+  function effectiveDriverId(pick) {
+    const swap = (allSwaps || []).find(s =>
+      s.player_id === pick.player_id && s.original_driver_id === pick.driver_id
+    )
+    if (swap) return swap.swap_driver_id
+
+    const sub = (activeSubs || []).find(s =>
+      s.player_id === pick.player_id && s.original_driver_id === pick.driver_id
+    )
+    if (sub) return sub.sub_driver_id
+
+    return pick.driver_id
+  }
+
+  function effectiveDriverInfo(pick) {
+    const eid = effectiveDriverId(pick)
+    if (eid === pick.driver_id) return pick.drivers // original joined data
+    const d = (allDrivers || []).find(d => d.driver_id === eid)
+    return d ? { driver_name: d.driver_name, car_number: d.car_number } : pick.drivers
+  }
+
   // Number of rounds (max picks any player has)
   const maxRounds = players.length
     ? Math.max(...players.map(p => playerPicksByRound(p.player_id).length), 0)
@@ -305,11 +327,15 @@ export default function MetricsPage() {
                     {players.map((pl, pi) => {
                       const myPicks = playerPicksByRound(pl.player_id)
                       const withTotals = myPicks
-                        .filter(p => driverTotals[p.driver_id] !== undefined)
+                        .filter(p => {
+                          const did = parseInt(effectiveDriverId(p), 10)
+                          return driverTotals[did] !== undefined
+                        })
                         .map(p => {
-                          const did = parseInt(p.driver_id, 10)
+                          const did = parseInt(effectiveDriverId(p), 10)
                           const w = driverWins[did] || 0
-                          return { ...p, total: driverTotals[did], adjTotal: (driverTotals[did] || 0) - w * 10, rank: driverRanks[did] }
+                          const driverInfo = effectiveDriverInfo(p)
+                          return { ...p, drivers: driverInfo, total: driverTotals[did], adjTotal: (driverTotals[did] || 0) - w * 10, rank: driverRanks[did] }
                         })
                         .sort((a,b) => useAdj ? a.adjTotal - b.adjTotal : a.total - b.total)
 
@@ -369,7 +395,7 @@ export default function MetricsPage() {
             const allRanks = []
             players.forEach(pl => {
               playerPicksByRound(pl.player_id).forEach(p => {
-                const r = liveRanks[parseInt(p.driver_id, 10)]
+                const r = liveRanks[parseInt(effectiveDriverId(p), 10)]
                 if (r) allRanks.push(r)
               })
             })
@@ -405,7 +431,10 @@ export default function MetricsPage() {
                           {players.map((pl, pi) => {
                             const myPicks = playerPicksByRound(pl.player_id)
                             const pick = myPicks[roundIdx]
-                            const rank = pick ? liveRanks[parseInt(pick.driver_id, 10)] : null
+                            const effectiveDid = pick ? parseInt(effectiveDriverId(pick), 10) : null
+                            const rank = effectiveDid ? liveRanks[effectiveDid] : null
+                            const driverInfo = pick ? effectiveDriverInfo(pick) : null
+                            const isSubstituted = pick && effectiveDid !== parseInt(pick.driver_id, 10)
                             return (
                               <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center' }}>
                                 {pick ? (
@@ -414,8 +443,8 @@ export default function MetricsPage() {
                                       {rank ?? '—'}
                                     </div>
                                     <div style={{ fontSize:10, color:'var(--dim)', marginTop:1 }}>of {totalDriverCount}</div>
-                                    <div style={{ fontSize:14, color:'var(--muted)', marginTop:2 }}>
-                                      {pick.drivers?.driver_name}
+                                    <div style={{ fontSize:14, color: isSubstituted ? 'var(--gold)' : 'var(--muted)', marginTop:2 }}>
+                                      {driverInfo?.driver_name}{isSubstituted ? ' *' : ''}
                                     </div>
                                   </div>
                                 ) : <span style={{ color:'var(--dim)' }}>—</span>}
@@ -451,7 +480,7 @@ export default function MetricsPage() {
             const allEff = []
             players.forEach(pl => {
               playerPicksByRound(pl.player_id).forEach((p, idx) => {
-                const rank = liveRanks[parseInt(p.driver_id, 10)]
+                const rank = liveRanks[parseInt(effectiveDriverId(p), 10)]
                 if (rank) {
                   const pickPos = p.pick_number || idx + 1
                   allEff.push(rank / pickPos)
@@ -490,9 +519,12 @@ export default function MetricsPage() {
                           {players.map((pl, pi) => {
                             const myPicks = playerPicksByRound(pl.player_id)
                             const pick = myPicks[roundIdx]
-                            const rank = pick ? liveRanks[parseInt(pick.driver_id, 10)] : null
+                            const effectiveDid = pick ? parseInt(effectiveDriverId(pick), 10) : null
+                            const rank = effectiveDid ? liveRanks[effectiveDid] : null
                             const pickPos = pick ? pick.pick_number : roundIdx + 1
                             const eff = rank ? (rank / pickPos) : null
+                            const driverInfo = pick ? effectiveDriverInfo(pick) : null
+                            const isSubstituted = pick && effectiveDid !== parseInt(pick.driver_id, 10)
 
                             // Color text based on whether above/below 1.0
                             const textColor = eff === null ? 'var(--dim)'
@@ -507,8 +539,8 @@ export default function MetricsPage() {
                                     <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: textColor, letterSpacing:'0.04em', lineHeight:1 }}>
                                       {eff.toFixed(2)}
                                     </div>
-                                    <div style={{ fontSize:14, color:'var(--muted)', marginTop:3 }}>
-                                      {pick.drivers?.driver_name}
+                                    <div style={{ fontSize:14, color: isSubstituted ? 'var(--gold)' : 'var(--muted)', marginTop:3 }}>
+                                      {driverInfo?.driver_name}{isSubstituted ? ' *' : ''}
                                     </div>
                                     <div style={{ fontSize:12, color:'var(--dim)', marginTop:2 }}>
                                       {ordinal(rank)} place / Pick {pickPos}
@@ -516,7 +548,7 @@ export default function MetricsPage() {
                                   </div>
                                 ) : pick ? (
                                   <div>
-                                    <div style={{ fontSize:14, color:'var(--dim)' }}>{pick.drivers?.driver_name}</div>
+                                    <div style={{ fontSize:14, color: isSubstituted ? 'var(--gold)' : 'var(--dim)' }}>{driverInfo?.driver_name}{isSubstituted ? ' *' : ''}</div>
                                     <div style={{ fontSize:12, color:'var(--dim)' }}>no results</div>
                                   </div>
                                 ) : <span style={{ color:'var(--dim)' }}>—</span>}
