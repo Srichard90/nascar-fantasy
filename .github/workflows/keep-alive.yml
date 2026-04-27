@@ -9,14 +9,19 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase
+      - name: Insert heartbeat row
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/auth/v1/settings" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}")
+            -X POST \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/heartbeat" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{}')
           echo "Response code: $response"
-          if [ "$response" != "200" ]; then
+          if [ "$response" != "201" ]; then
             echo "Ping failed with status $response"
             exit 1
           fi
-          echo "Supabase ping successful!"
+          echo "Supabase heartbeat recorded!"
