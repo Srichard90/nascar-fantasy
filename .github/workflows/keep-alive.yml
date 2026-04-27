@@ -2,8 +2,8 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: '0 0 */4 * *'  # Runs every 4 days
-  workflow_dispatch:        # Allows manual trigger
+    - cron: '0 0 */4 * *'
+  workflow_dispatch:
 
 jobs:
   ping:
@@ -12,8 +12,13 @@ jobs:
       - name: Ping Supabase DB
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-                  "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/ping_db" \
-                  -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-                  -H "Content-Type: application/json")
-                echo "Response code: $response"
-                if [ "$response" != "200" ]; then exit 1; fi
+            "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/ping_db" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            -X POST)
+          echo "Response code: $response"
+          if [ "$response" != "200" ]; then
+            echo "Ping failed with status $response"
+            exit 1
+          fi
+          echo "Supabase ping successful!"
