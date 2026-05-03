@@ -47,23 +47,23 @@ const lbl = {
   marginBottom: 6,
 }
 
-// ── Password gate ──────────────────────────────────────────────
-function PasswordGate({ onUnlock }) {
-  const [pwd,  setPwd]  = useState('')
-  const [err,  setErr]  = useState('')
-  const [busy, setBusy] = useState(false)
+// ── Login gate (Supabase Auth) ─────────────────────────────────
+function LoginGate({ onUnlock }) {
+  const [email, setEmail] = useState('')
+  const [pwd,   setPwd]   = useState('')
+  const [err,   setErr]   = useState('')
+  const [busy,  setBusy]  = useState(false)
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true); setErr('')
-    const res = await fetch('/api/verify-admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pwd }),
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: pwd,
     })
     setBusy(false)
-    if (res.ok) { sessionStorage.setItem('nascar_admin','1'); onUnlock() }
-    else setErr('Incorrect password — check your Vercel env variable ADMIN_PASSWORD.')
+    if (error) setErr('Login failed: ' + error.message)
+    else onUnlock()
   }
 
   return (
@@ -80,9 +80,20 @@ function PasswordGate({ onUnlock }) {
         <div style={{ textAlign:'center', marginBottom:28 }}>
           <div style={{ fontSize:42, marginBottom:10 }}>🔒</div>
           <h2 style={{ fontSize:32, color:'var(--text)', margin:0 }}>Admin Access</h2>
-          <p style={{ color:'var(--muted)', fontSize:14, marginTop:6 }}>Enter your admin password</p>
+          <p style={{ color:'var(--muted)', fontSize:14, marginTop:6 }}>Sign in with your admin account</p>
         </div>
         <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div>
+            <label style={lbl}>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              style={inp}
+              autoFocus
+            />
+          </div>
           <div>
             <label style={lbl}>Password</label>
             <input
@@ -91,12 +102,11 @@ function PasswordGate({ onUnlock }) {
               onChange={e => setPwd(e.target.value)}
               placeholder="••••••••"
               style={inp}
-              autoFocus
             />
           </div>
           {err && <div style={{ background:'rgba(232,25,44,0.12)', border:'1px solid rgba(232,25,44,0.3)', color:'#ff6b7a', borderRadius:7, padding:'10px 14px', fontSize:13 }}>{err}</div>}
-          <button type="submit" disabled={busy||!pwd} style={{ ...btn('red'), width:'100%', padding:'12px', opacity: busy||!pwd ? 0.4 : 1 }}>
-            {busy ? 'Checking…' : 'Unlock Admin'}
+          <button type="submit" disabled={busy||!email||!pwd} style={{ ...btn('red'), width:'100%', padding:'12px', opacity: busy||!email||!pwd ? 0.4 : 1 }}>
+            {busy ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
       </div>
@@ -1471,12 +1481,24 @@ function ResultsTab({ season, races, drivers, session, reload, flash, boom }) {
 
 // ── Page export ────────────────────────────────────────────────
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(false)
+  const [authed,   setAuthed]   = useState(false)
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
-    if (sessionStorage.getItem('nascar_admin')==='1') setAuthed(true)
+    // Check for an existing session on page load (handles refresh)
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthed(!!data.session)
+      setChecking(false)
+    })
+
+    // Listen for login/logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => setAuthed(!!session)
+    )
+    return () => subscription.unsubscribe()
   }, [])
 
-  if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
+  if (checking) return null
+  if (!authed)  return <LoginGate onUnlock={() => setAuthed(true)} />
   return <AdminPanel />
 }
