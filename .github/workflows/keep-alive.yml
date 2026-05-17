@@ -2,14 +2,14 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: '0 0 */4 * *'
+    - cron: '0 */12 * * *'  # Every 12 hours
   workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Insert heartbeat row
+      - name: Insert heartbeat (write activity)
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST \
@@ -19,9 +19,35 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Prefer: return=minimal" \
             -d '{}')
-          echo "Response code: $response"
-          if [ "$response" != "201" ]; then
-            echo "Ping failed with status $response"
-            exit 1
-          fi
-          echo "Supabase heartbeat recorded!"
+          echo "Insert response: $response"
+          if [ "$response" != "201" ]; then exit 1; fi
+
+      - name: Read drivers (read activity)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/drivers?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          echo "Read response: $response"
+          if [ "$response" != "200" ]; then exit 1; fi
+
+      - name: Read races (read activity)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/races?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          echo "Read response: $response"
+          if [ "$response" != "200" ]; then exit 1; fi
+
+      - name: Read race_results (read activity)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/race_results?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          echo "Read response: $response"
+          if [ "$response" != "200" ]; then exit 1; fi
+
+      - name: Summary
+        run: echo "✅ All keep-alive activity completed successfully"
