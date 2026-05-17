@@ -2,7 +2,7 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: '0 */12 * * *'  # Every 12 hours
+    - cron: '0 */12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -25,7 +25,7 @@ jobs:
       - name: Read drivers (read activity)
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/drivers?select=id&limit=1" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/drivers?limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
           echo "Read drivers response: $response"
@@ -34,16 +34,16 @@ jobs:
       - name: Read races (read activity)
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/races?select=id&limit=1" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/races?limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}") 
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
           echo "Read races response: $response"
           if [ "$response" != "200" ]; then exit 1; fi
 
       - name: Read race_results (read activity)
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/race_results?select=id&limit=1" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/race_results?limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
           echo "Read race_results response: $response"
