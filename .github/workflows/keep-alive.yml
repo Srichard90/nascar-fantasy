@@ -28,7 +28,7 @@ jobs:
             "${{ secrets.SUPABASE_URL }}/rest/v1/drivers?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
-          echo "Read response: $response"
+          echo "Read drivers response: $response"
           if [ "$response" != "200" ]; then exit 1; fi
 
       - name: Read races (read activity)
@@ -36,8 +36,8 @@ jobs:
           response=$(curl -s -o /dev/null -w "%{http_code}" \
             "${{ secrets.SUPABASE_URL }}/rest/v1/races?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
-          echo "Read response: $response"
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}") 
+          echo "Read races response: $response"
           if [ "$response" != "200" ]; then exit 1; fi
 
       - name: Read race_results (read activity)
@@ -46,7 +46,7 @@ jobs:
             "${{ secrets.SUPABASE_URL }}/rest/v1/race_results?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
-          echo "Read response: $response"
+          echo "Read race_results response: $response"
           if [ "$response" != "200" ]; then exit 1; fi
 
       - name: Summary
