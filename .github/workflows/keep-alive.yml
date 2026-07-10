@@ -5,10 +5,16 @@ on:
     - cron: '0 */12 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write  # Needed to commit back to the repo
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Insert heartbeat (write activity)
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -48,6 +54,24 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
           echo "Read race_results response: $response"
           if [ "$response" != "200" ]; then exit 1; fi
+
+      - name: Commit heartbeat log (GitHub activity)
+        run: |
+          # Only commit once every ~50 days to avoid noisy git history
+          DAY_OF_YEAR=$(date +%j)
+          if [ $((10#$DAY_OF_YEAR % 50)) -ne 0 ]; then
+            echo "Not a commit day (day $DAY_OF_YEAR of year), skipping."
+            exit 0
+          fi
+          
+          mkdir -p .github/keep-alive
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/keep-alive/last-run.txt
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keep-alive/last-run.txt
+          git commit -m "chore: keep-alive heartbeat $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git push
 
       - name: Summary
         run: echo "✅ All keep-alive activity completed successfully"
