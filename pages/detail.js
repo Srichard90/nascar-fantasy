@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSeason } from '../lib/season'
 
@@ -123,6 +123,40 @@ export default function WeeklyDetailPage() {
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
 
+  // ── Click-to-sort (Driver, #, Adj. Pts, Rank). Default: car number. ──
+  const [sort, setSort] = useState({ key: 'num', dir: 1 })
+  const carNum = d => { const n = parseInt(d.car_number, 10); return isNaN(n) ? Infinity : n }
+  const sortedDrivers = useMemo(() => {
+    const val = {
+      driver: d => d.driver_name || '',
+      num:    d => carNum(d),
+      adj:    d => driverStats[d.driver_id]?.total,
+      rank:   d => driverStats[d.driver_id]?.rank,
+    }[sort.key]
+    return [...drivers].sort((a, b) => {
+      const va = val(a), vb = val(b)
+      // Drivers without results always sink to the bottom.
+      if (va == null && vb == null) return carNum(a) - carNum(b)
+      if (va == null) return 1
+      if (vb == null) return -1
+      const c = typeof va === 'string' ? va.localeCompare(vb) : va - vb
+      return c * sort.dir || carNum(a) - carNum(b)
+    })
+  }, [drivers, driverStats, sort])
+  const sortBy = key => setSort(prev => ({ key, dir: prev.key === key ? -prev.dir : 1 }))
+  const sortProps = key => ({
+    onClick: () => sortBy(key),
+    onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sortBy(key) } },
+    tabIndex: 0,
+    role: 'button',
+    'aria-sort': sort.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none',
+  })
+  const arrow = key => (
+    <span style={{ marginLeft: 4, color: sort.key === key ? 'var(--gold)' : 'var(--dim)', fontSize: 10 }}>
+      {sort.key === key ? (sort.dir === 1 ? '▲' : '▼') : '↕'}
+    </span>
+  )
+
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:300 }}>
       <span style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:18, letterSpacing:'0.1em' }}>LOADING…</span>
@@ -142,7 +176,7 @@ export default function WeeklyDetailPage() {
             )}
           </h1>
           <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>
-            {season?.season_name} &nbsp;·&nbsp; All drivers × all races &nbsp;·&nbsp; Sorted by car number &nbsp;·&nbsp; Adj. Pts = finish positions − 10 per win
+            {season?.season_name} &nbsp;·&nbsp; All drivers × all races &nbsp;·&nbsp; Click Driver, #, Adj. Pts or Rank to sort &nbsp;·&nbsp; Adj. Pts = finish positions − 10 per win
           </p>
         </div>
 
@@ -185,7 +219,8 @@ export default function WeeklyDetailPage() {
                   textTransform:'uppercase', color:'var(--muted)',
                   whiteSpace:'nowrap',
                   position:'sticky', left:0, zIndex:3,
-                }}>Driver</th>
+                  cursor:'pointer', userSelect:'none',
+                }} {...sortProps('driver')}>Driver{arrow('driver')}</th>
                 <th style={{
                   background:'var(--surface2)',
                   borderBottom:'1px solid var(--border)',
@@ -196,7 +231,8 @@ export default function WeeklyDetailPage() {
                   fontSize:13, fontWeight:700, letterSpacing:'0.08em',
                   textTransform:'uppercase', color:'var(--muted)',
                   position:'sticky', left:180, zIndex:3,
-                }}>#</th>
+                  cursor:'pointer', userSelect:'none',
+                }} {...sortProps('num')}>#{arrow('num')}</th>
                 <th style={{
                   background:'var(--surface2)',
                   borderBottom:'1px solid var(--border)',
@@ -207,7 +243,8 @@ export default function WeeklyDetailPage() {
                   fontSize:13, fontWeight:700, letterSpacing:'0.08em',
                   textTransform:'uppercase', color:'var(--muted)',
                   whiteSpace:'nowrap',
-                }} title="Finish positions − 10 per win">Adj. Pts</th>
+                  cursor:'pointer', userSelect:'none',
+                }} title="Finish positions − 10 per win" {...sortProps('adj')}>Adj. Pts{arrow('adj')}</th>
                 <th style={{
                   background:'var(--surface2)',
                   borderBottom:'1px solid var(--border)',
@@ -218,7 +255,8 @@ export default function WeeklyDetailPage() {
                   fontSize:13, fontWeight:700, letterSpacing:'0.08em',
                   textTransform:'uppercase', color:'var(--muted)',
                   whiteSpace:'nowrap',
-                }}>Rank</th>
+                  cursor:'pointer', userSelect:'none',
+                }} {...sortProps('rank')}>Rank{arrow('rank')}</th>
                 {races.map(r => (
                   <th key={r.race_id} style={{
                     background:'var(--surface2)',
@@ -273,7 +311,7 @@ export default function WeeklyDetailPage() {
             </thead>
 
             <tbody>
-              {drivers.map((d, di) => (
+              {sortedDrivers.map((d, di) => (
                 <tr key={d.driver_id} style={{
                   background: di % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
                 }}>

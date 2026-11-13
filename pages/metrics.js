@@ -40,7 +40,17 @@ function Section({ title, note, children, right }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ fontSize: 28, color: 'var(--text)', margin: 0 }}>{title}</h2>
-          {note && <p style={{ color: 'var(--muted)', fontSize: 14, margin: '4px 0 0', maxWidth: 760 }}>{note}</p>}
+          {note && (
+            <div style={{ color: 'var(--muted)', fontSize: 14, margin: '4px 0 0', maxWidth: 820, lineHeight: 1.55 }}>
+              {(Array.isArray(note) ? note : [note]).map((line, i) => (
+                <div key={i}>
+                  {Array.isArray(line)
+                    ? <><b style={{ color: 'var(--text)', fontWeight: 600 }}>{line[0]}:</b> {line[1]}</>
+                    : line}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         {right}
       </div>
@@ -121,7 +131,10 @@ function RaceTab({ s }) {
     <>
       <Section
         title="Season Race"
-        note={`How far each player was behind 1st place (adjusted points) after every race. ${done ? 'Final' : 'Current'} leader is on the top line. Hover for the standings after any week.`}
+        note={[
+          `How far each player was behind 1st place (adjusted points) after every race. The ${done ? 'final' : 'current'} leader is on the top line.`,
+          'Hover the chart for the standings after any week.',
+        ]}
       >
         <div style={{ ...card, padding: '16px 12px 8px' }}>
           <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 8px 8px' }}>
@@ -175,7 +188,10 @@ function WeeklyTab({ s }) {
   const name = id => s.playerById.get(id).player_name
   return (
     <>
-      <Section title="Weekly Winners" note="The player with the lowest adjusted score each race wins the week. Hover a square to see every player's score that week.">
+      <Section title="Weekly Winners" note={[
+        'The player with the lowest adjusted score each race wins the week.',
+        "Hover a square to see every player's score that week.",
+      ]}>
         <style>{`
           .week-grid { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 5px; }
           @media (max-width: 640px) { .week-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
@@ -245,7 +261,13 @@ function TeamsTab({ s }) {
   return (
     <Section
       title="Team Breakdown"
-      note={`Every driver who scored for each team, counted only for the weeks he was on it (swaps and injury subs included). Pts = finish positions − ${WIN_BONUS} per win. MVP and Weak Link are the best and worst average finish among drivers with 5+ races.`}
+      note={[
+        'Every driver who scored for each team, counted only for the weeks he was on it (swaps and injury subs included).',
+        ['Wks', 'weeks the driver counted for the team'],
+        ['Pts', `finish positions − ${WIN_BONUS} per win`],
+        ['30+', 'finishes of 30th or worse'],
+        ['MVP / Weak Link', 'best and worst average finish among drivers with 5+ races'],
+      ]}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 500px), 1fr))', gap: 16 }}>
         {teams.map((t, i) => {
@@ -350,7 +372,10 @@ function FormTab({ s }) {
 
   return (
     <>
-      <Section title="Player Form" note={`Average weekly adjusted score over the ${span} (weeks ${f.weeks[0]}–${f.weeks[f.weeks.length - 1]}) compared with the rest of the season. Lower is better; ★ marks a weekly win.`}>
+      <Section title="Player Form" note={[
+        `Average weekly adjusted score over the ${span} (weeks ${f.weeks[0]}–${f.weeks[f.weeks.length - 1]}) compared with the rest of the season. Lower is better.`,
+        ['★', 'weekly win'],
+      ]}>
         <Scroll minWidth={700}>
           <thead><tr>
             <th style={{ ...th, textAlign: 'left' }}>Player</th>
@@ -379,7 +404,10 @@ function FormTab({ s }) {
         </Scroll>
       </Section>
 
-      <Section title="Drivers on the Move" note={`Biggest change in average finish over the ${span} compared with earlier in the season (drivers with 3+ races in each).`}>
+      <Section title="Drivers on the Move" note={[
+        `Biggest change in average finish over the ${span} compared with earlier in the season.`,
+        'Only drivers with 3+ races in each stretch are included.',
+      ]}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 16 }}>
           <DriverList title="🔥 Heating up" items={hot} />
           <DriverList title="🧊 Cooling off" items={cold} />
@@ -435,7 +463,12 @@ function DraftTab({ s }) {
     <>
       <Section
         title="Roster Strength"
-        note={`Season to date (${thru}): how each player's current drivers rank among all ${s.rankedCount} drivers by adjusted points. Avg place = average current place of the player's 5 drivers. Top 10 = drivers currently in the top 10. Beat pick = drivers whose current place is as good as or better than the overall pick used on them (taken 9th, now 3rd), i.e. a Draft Efficiency of 1.00 or lower.`}
+        note={[
+          `Season to date (${thru}): how each player's current drivers rank among all ${s.rankedCount} drivers by adjusted points.`,
+          ['Avg place', "average current place of the player's 5 drivers"],
+          ['Top 10', 'drivers currently ranked in the top 10'],
+          ['Beat pick', 'drivers whose current place is as good as or better than the overall pick used on them (taken 9th, now 3rd), a Draft Efficiency of 1.00 or lower'],
+        ]}
       >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
           {roster.map((r, i) => (
@@ -461,7 +494,11 @@ function DraftTab({ s }) {
 
       <Section
         title="Draft Efficiency"
-        note={`Current place ÷ overall pick number, ${thru}. Below 1.0 = outperforming the pick, above 1.0 = underperforming. Place is the driver's rank among all ${s.rankedCount} drivers by adjusted points (Base Pts − Wins × 10).`}
+        note={[
+          `Current place ÷ overall pick number, ${thru}.`,
+          ['Ratio', 'below 1.0 = outperforming the pick, above 1.0 = underperforming'],
+          ['Place', `the driver's rank among all ${s.rankedCount} drivers by adjusted points (Base Pts − Wins × 10)`],
+        ]}
       >
         <Scroll minWidth={140 + players.length * 150}>
           <thead><tr>
@@ -516,7 +553,10 @@ function DriversTab({ s }) {
   return (
     <Section
       title="Driver Rankings"
-      note={`All drivers ranked by adjusted points (finish positions − ${WIN_BONUS} per win). Lower is better. Owner is as of ${asOf}.`}
+      note={[
+        `All drivers ranked by adjusted points (finish positions − ${WIN_BONUS} per win). Lower is better.`,
+        ['Owner', `as of ${asOf}`],
+      ]}
       right={
         <div style={{ display: 'flex', gap: 6 }}>
           {[['all', 'All'], ['owned', 'Owned'], ['available', 'Available']].map(([k, l]) => (
