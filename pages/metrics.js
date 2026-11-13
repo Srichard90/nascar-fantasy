@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import { useSeason } from '../lib/season'
-import { loadSeasonData, computeSeasonStats, WIN_BONUS } from '../lib/league'
+import { loadSeasonData, computeSeasonStats, WIN_BONUS, round1 } from '../lib/league'
 import SeasonRaceChart from '../components/SeasonRaceChart'
 
 const TABS = [
@@ -9,8 +9,7 @@ const TABS = [
   { id: 'weekly',  label: 'Weekly Wins',       icon: '⚔️' },
   { id: 'teams',   label: 'Team Breakdown',    icon: '👥' },
   { id: 'form',    label: 'Hot & Cold',        icon: '🔥' },
-  { id: 'draftperf', label: 'Draft Performance', icon: '🎯' },
-  { id: 'drafteff',  label: 'Draft Efficiency',  icon: '⚡' },
+  { id: 'draft',   label: 'Draft Report Card', icon: '🎯' },
   { id: 'drivers', label: 'Driver Rankings',   icon: '🏁' },
 ]
 
@@ -135,22 +134,30 @@ function RaceTab({ s }) {
         </div>
       </Section>
 
-      <Section title="Race Summary" note={`${s.leadChanges} lead change${s.leadChanges === 1 ? '' : 's'} this season.`}>
+      <Section title="Race Summary" note={`${s.leadChanges} lead change${s.leadChanges === 1 ? '' : 's'} ${done ? 'this season' : 'so far this season'}.`}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
           {order.map((id, i) => {
             const p = s.playerById.get(id), r = s.raceSummary[id]
+            const rows = [
+              { title: 'Weeks in 1st', value: r.weeksLed, sub: `of ${s.completed} races` },
+              { title: 'Biggest lead', value: r.biggestLead || '—', sub: r.biggestLeadWeek ? `points · after wk ${r.biggestLeadWeek}` : 'never led alone' },
+              { title: 'Furthest behind', value: r.biggestDeficit || '—', sub: r.biggestDeficit ? 'points back of 1st' : 'never trailed' },
+            ]
             return (
-              <div key={id} style={{ ...card, padding: 16, borderTop: `3px solid ${s.colors[p.player_name]}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <PlayerName name={p.player_name} color={s.colors[p.player_name]} size={19} />
-                  <span style={{ ...label, color: i === 0 ? 'var(--gold)' : 'var(--muted)' }}>{ordinal(i + 1)}{done ? ' · final' : ''}</span>
+              <div key={id} style={{ ...card, padding: '16px 18px', borderTop: `3px solid ${s.colors[p.player_name]}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <PlayerName name={p.player_name} color={s.colors[p.player_name]} size={21} />
+                  <span style={{ ...label, fontSize: 13, color: i === 0 ? 'var(--gold)' : 'var(--muted)' }}>{ordinal(i + 1)}{done ? ' · final' : ''}</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Stat title="Weeks in 1st" value={r.weeksLed} sub={`of ${s.completed}`} />
-                  <Stat title="Biggest lead" value={r.biggestLead ? `${r.biggestLead}` : '—'} sub={r.biggestLeadWeek ? `after wk ${r.biggestLeadWeek}` : 'never led alone'} />
-                  <Stat title="Best / worst spot" value={`${ordinal(r.bestPos)} / ${ordinal(r.worstPos)}`} />
-                  <Stat title="Furthest behind" value={r.biggestDeficit ? `${r.biggestDeficit}` : '—'} sub="points" />
-                </div>
+                {rows.map((row, k) => (
+                  <div key={row.title} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: k ? '1px solid var(--border)' : 'none' }}>
+                    <div>
+                      <div style={{ ...label, fontSize: 13 }}>{row.title}</div>
+                      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{row.sub}</div>
+                    </div>
+                    <div style={{ ...num, fontSize: 40, lineHeight: 1, color: 'var(--text)' }}>{row.value}</div>
+                  </div>
+                ))}
               </div>
             )
           })}
@@ -379,99 +386,137 @@ function FormTab({ s }) {
   )
 }
 
-// ── Tabs: Draft Performance / Draft Efficiency ──────────────────
-// Restored from the original Metrics page. Each pick slot shows the driver
-// currently in it (a swap or active sub replaces the drafted driver, marked *)
-// and that driver's overall season rank.
+// ── Tab: Draft Report Card ──────────────────────────────────────
+// Season-to-date. One grid built on the Draft Efficiency layout: each pick
+// slot shows the efficiency ratio (current place ÷ pick number), the driver
+// in the slot, his current place (highlighted, top-5 / top-10 colors) with
+// the pick number, and how many places he moved after the latest race.
+// Above it, Roster Strength sums up each player's current drivers.
 const ROUND_NAMES = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth']
 
-function DraftGridTab({ s, mode }) {
-  const [useAdj, setUseAdj] = useState(true)
-  const players = [...s.players].sort((a, b) => a.draft_position - b.draft_position)
-  const scored = s.drivers.filter(d => d.starts > 0)
-    .map(d => ({ id: d.driver_id, score: useAdj ? d.adj : d.base }))
-    .sort((a, b) => a.score - b.score)
-  const rank = new Map(scored.map((d, i) => [d.id, i + 1]))
-  const total = scored.length
-  const basis = useAdj ? 'adjusted points (Base Pts − Wins × 10)' : 'base finish position points'
-  const perf = mode === 'perf'
+function placeTone(rk) {
+  if (rk == null) return { bg: 'rgba(160,160,160,0.12)', fg: 'var(--muted)' }
+  if (rk <= 5) return { bg: 'rgba(34,197,94,0.16)', fg: 'var(--green)' }
+  if (rk <= 10) return { bg: 'rgba(245,197,24,0.16)', fg: 'var(--gold)' }
+  return { bg: 'rgba(160,160,160,0.12)', fg: 'var(--text)' }
+}
 
-  const toggle = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={label}>Points:</span>
-      {[{ l: 'Adjusted', v: true }, { l: 'Base', v: false }].map(o => (
-        <button key={o.l} onClick={() => setUseAdj(o.v)} style={{
-          padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
-          border: `1px solid ${useAdj === o.v ? 'var(--gold)' : 'var(--border2)'}`,
-          background: useAdj === o.v ? 'rgba(245,197,24,0.12)' : 'transparent',
-          color: useAdj === o.v ? 'var(--gold)' : 'var(--dim)',
-          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase',
-        }}>{o.l}</button>
-      ))}
-    </div>
+function Move({ d }) {
+  if (!d || d.rank == null || d.prevRank == null) return null
+  const m = d.prevRank - d.rank
+  if (m === 0) return <span style={{ fontSize: 11, color: 'var(--dim)' }}>–</span>
+  return (
+    <span title={`${m > 0 ? 'Up' : 'Down'} ${Math.abs(m)} place${Math.abs(m) === 1 ? '' : 's'} after the latest race`}
+      style={{ fontSize: 11, fontWeight: 700, color: m > 0 ? GOOD : BAD, whiteSpace: 'nowrap' }}>
+      {m > 0 ? '▲' : '▼'}{Math.abs(m)}
+    </span>
   )
+}
+
+function DraftTab({ s }) {
+  const players = [...s.players].sort((a, b) => a.draft_position - b.draft_position)
+  const thru = s.completed === 0 ? null : `through week ${s.nowWeek}`
+  const showMove = s.completed >= 2
+
+  if (!s.completed) {
+    return <Empty>Draft values appear once the first race of the season is complete.</Empty>
+  }
+
+  const cells = s.draftSlots.map(slot => {
+    const d = slot.driver
+    const rk = d?.rank ?? null
+    return { ...slot, rk, eff: rk ? rk / slot.pick.pick_number : null }
+  })
+
+  const roster = players.map(p => {
+    const mine = cells.filter(c => c.pick.player_id === p.player_id && c.rk != null)
+    const best = [...mine].sort((a, b) => a.eff - b.eff)[0] || null
+    return {
+      player: p,
+      avgPlace: mine.length ? round1(mine.reduce((t, c) => t + c.rk, 0) / mine.length) : null,
+      top10: mine.filter(c => c.rk <= 10).length,
+      beating: mine.filter(c => c.eff <= 1).length,
+      count: mine.length,
+      best,
+    }
+  }).sort((a, b) => (a.avgPlace ?? 1e9) - (b.avgPlace ?? 1e9))
 
   return (
-    <Section
-      title={perf ? 'Draft Performance' : 'Draft Position Efficiency'}
-      note={perf
-        ? `Current overall rank of each drafted driver by ${basis} — lower is better.`
-        : `Current driver rank (by ${useAdj ? 'adjusted' : 'base'} points) ÷ overall draft pick number. Below 1.0 = outperforming. Above 1.0 = underperforming.`}
-      right={toggle}
-    >
-      <Scroll minWidth={140 + players.length * 130}>
-        <thead><tr>
-          <th style={{ ...th, textAlign: 'left' }}>Pick</th>
-          {players.map(p => <th key={p.player_id} style={th}><PlayerName name={p.player_name} color={s.colors[p.player_name]} size={18} /></th>)}
-        </tr></thead>
-        <tbody>
-          {Array.from({ length: s.rounds }, (_, r) => (
-            <tr key={r}>
-              <td style={{ ...td, textAlign: 'left', ...label, fontSize: 14 }}>{ROUND_NAMES[r] || `Pick ${r + 1}`} Pick</td>
-              {players.map(p => {
-                const slot = s.draftSlots.find(x => x.pick.player_id === p.player_id && x.pick.round_number === r + 1)
-                if (!slot) return <td key={p.player_id} style={{ ...td, color: 'var(--dim)' }}>—</td>
-                const rk = slot.driver ? rank.get(slot.driver.driver_id) : null
-                const nameLine = (
-                  <div style={{ fontSize: 14, color: slot.replaced ? 'var(--gold)' : 'var(--muted)', marginTop: 2 }}>
-                    {slot.driver?.driver_name}{slot.replaced ? ' *' : ''}
-                  </div>
-                )
-                if (perf) {
+    <>
+      <Section
+        title="Roster Strength"
+        note={`Season to date (${thru}): how each player's current drivers rank among all ${s.rankedCount} drivers by adjusted points.`}
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
+          {roster.map((r, i) => (
+            <div key={r.player.player_id} style={{ ...card, padding: 16, borderTop: `3px solid ${s.colors[r.player.player_name]}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <PlayerName name={r.player.player_name} color={s.colors[r.player.player_name]} size={19} />
+                {i === 0 && <Tag tone="gold">Strongest</Tag>}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, auto)', justifyContent: 'space-between', gap: 10 }}>
+                <Stat title="Avg place" value={r.avgPlace ?? '—'} />
+                <Stat title="Top 10" value={r.top10} sub={`of ${r.count}`} />
+                <Stat title="Beat pick" value={r.beating} sub={`of ${r.count}`} />
+              </div>
+              {r.best && (
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 10 }}>
+                  Best value: <b style={{ color: 'var(--text)' }}>{r.best.driver?.driver_name}</b> ({ordinal(r.best.rk)}, pick {r.best.pick.pick_number})
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Draft Efficiency"
+        note={`Current place ÷ overall pick number, ${thru}. Below 1.0 = outperforming the pick, above 1.0 = underperforming. Place is the driver's rank among all ${s.rankedCount} drivers by adjusted points (Base Pts − Wins × 10).`}
+      >
+        <Scroll minWidth={140 + players.length * 150}>
+          <thead><tr>
+            <th style={{ ...th, textAlign: 'left' }}>Pick</th>
+            {players.map(p => <th key={p.player_id} style={th}><PlayerName name={p.player_name} color={s.colors[p.player_name]} size={18} /></th>)}
+          </tr></thead>
+          <tbody>
+            {Array.from({ length: s.rounds }, (_, r) => (
+              <tr key={r}>
+                <td style={{ ...td, textAlign: 'left', ...label, fontSize: 14 }}>{ROUND_NAMES[r] || `Pick ${r + 1}`} Pick</td>
+                {players.map(p => {
+                  const c = cells.find(x => x.pick.player_id === p.player_id && x.pick.round_number === r + 1)
+                  if (!c) return <td key={p.player_id} style={{ ...td, color: 'var(--dim)' }}>—</td>
+                  const tone = placeTone(c.rk)
                   return (
                     <td key={p.player_id} style={td}>
-                      <div style={{ ...num, fontSize: 26, lineHeight: 1, color: rk && rk <= 5 ? 'var(--green)' : rk && rk <= 10 ? 'var(--gold)' : 'var(--text)' }}>{rk ?? '—'}</div>
-                      <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>of {total}</div>
-                      {nameLine}
+                      <div style={{ ...num, fontSize: 26, lineHeight: 1, color: c.eff == null ? 'var(--dim)' : c.eff <= 1 ? 'var(--green)' : c.eff <= 2 ? 'var(--text)' : BAD }}>
+                        {c.eff == null ? '—' : c.eff.toFixed(2)}
+                      </div>
+                      <div style={{ fontSize: 14, color: c.replaced ? 'var(--gold)' : 'var(--muted)', marginTop: 3 }}>
+                        {c.driver?.driver_name}{c.replaced ? ' *' : ''}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 5 }}>
+                        <span style={{ background: tone.bg, color: tone.fg, borderRadius: 6, padding: '1px 8px', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 15, letterSpacing: '0.03em' }}>
+                          {c.rk ? ordinal(c.rk) : 'no results'}
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--dim)' }}>Pick {c.pick.pick_number}</span>
+                        {showMove && <Move d={c.driver} />}
+                      </div>
                     </td>
                   )
-                }
-                const eff = rk ? rk / slot.pick.pick_number : null
-                return (
-                  <td key={p.player_id} style={td}>
-                    {eff == null ? (<>{nameLine}<div style={{ fontSize: 12, color: 'var(--dim)' }}>no results</div></>) : (<>
-                      <div style={{ ...num, fontSize: 26, lineHeight: 1, color: eff <= 1 ? 'var(--green)' : eff <= 2 ? 'var(--text)' : BAD }}>{eff.toFixed(2)}</div>
-                      {nameLine}
-                      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{ordinal(rk)} place / Pick {slot.pick.pick_number}</div>
-                    </>)}
-                  </td>
-                )
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </Scroll>
-      <div style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-        {perf ? (<>
-          <span><span style={{ color: 'var(--green)' }}>■</span> Top 5 rank</span>
-          <span><span style={{ color: 'var(--gold)' }}>■</span> Top 10 rank</span>
-        </>) : (<>
-          <span><span style={{ color: 'var(--green)' }}>■</span> ≤ 1.0 — outperforming draft position</span>
-          <span><span style={{ color: BAD }}>■</span> &gt; 2.0 — significantly underperforming</span>
-        </>)}
-        <span><span style={{ color: 'var(--gold)' }}>*</span> Active sub or permanent swap in this slot</span>
-      </div>
-    </Section>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </Scroll>
+        <div style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)', display: 'flex', gap: '6px 20px', flexWrap: 'wrap' }}>
+          <span><b style={{ color: 'var(--green)' }}>Ratio ≤ 1.0</b> outperforming the pick</span>
+          <span><b style={{ color: BAD }}>Ratio &gt; 2.0</b> well below the pick</span>
+          <span><b style={{ color: 'var(--green)' }}>Place</b> top 5 · <b style={{ color: 'var(--gold)' }}>top 10</b></span>
+          {showMove && <span><b style={{ color: GOOD }}>▲</b>/<b style={{ color: BAD }}>▼</b> places moved after week {s.nowWeek}</span>}
+          <span><b style={{ color: 'var(--gold)' }}>*</b> active sub or permanent swap in this slot</span>
+        </div>
+      </Section>
+    </>
   )
 }
 
@@ -543,7 +588,8 @@ export default function MetricsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const tab = TABS.some(t => t.id === router.query.tab) ? router.query.tab : 'race'
+  const q = ['draftperf', 'drafteff'].includes(router.query.tab) ? 'draft' : router.query.tab
+  const tab = TABS.some(t => t.id === q) ? q : 'race'
   const setTab = id => router.replace({ pathname: '/metrics', query: { tab: id } }, undefined, { shallow: true, scroll: false })
 
   useEffect(() => {
@@ -606,8 +652,7 @@ export default function MetricsPage() {
           {tab === 'weekly'  && <WeeklyTab s={stats} />}
           {tab === 'teams'   && <TeamsTab s={stats} />}
           {tab === 'form'    && <FormTab s={stats} />}
-          {tab === 'draftperf' && <DraftGridTab s={stats} mode="perf" />}
-          {tab === 'drafteff'  && <DraftGridTab s={stats} mode="eff" />}
+          {tab === 'draft'   && <DraftTab s={stats} />}
           {tab === 'drivers' && <DriversTab s={stats} />}
         </>
       )}
