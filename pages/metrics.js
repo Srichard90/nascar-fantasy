@@ -152,8 +152,8 @@ function RaceTab({ s }) {
                 {rows.map((row, k) => (
                   <div key={row.title} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: k ? '1px solid var(--border)' : 'none' }}>
                     <div>
-                      <div style={{ ...label, fontSize: 13 }}>{row.title}</div>
-                      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{row.sub}</div>
+                      <div style={{ ...label, fontSize: 17 }}>{row.title}</div>
+                      <div style={{ fontSize: 13, color: 'var(--dim)', marginTop: 2 }}>{row.sub}</div>
                     </div>
                     <div style={{ ...num, fontSize: 40, lineHeight: 1, color: 'var(--text)' }}>{row.value}</div>
                   </div>
@@ -175,19 +175,22 @@ function WeeklyTab({ s }) {
   const name = id => s.playerById.get(id).player_name
   return (
     <>
-      <Section title="Weekly Winners" note="The player with the lowest adjusted score each race wins the week. Hover a square for the details.">
+      <Section title="Weekly Winners" note="The player with the lowest adjusted score each race wins the week. Hover a square to see every player's score that week.">
         <style>{`
           .week-grid { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 5px; }
           @media (max-width: 640px) { .week-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
         `}</style>
         <div style={{ ...card, padding: 16 }}>
           <div className="week-grid">
-            {s.weekWinners.map(w => {
+            {s.weekWinners.map((w, wi) => {
               const shared = w.winners.length > 1
+              const sc = s.weeks[wi].scores
+              const lines = [...s.players].sort((a, b) => sc[a.player_id].adj - sc[b.player_id].adj)
+                .map(p => `${w.winners.includes(p.player_id) ? '★ ' : '   '}${p.player_name}  ${sc[p.player_id].adj}`)
               const color = shared ? '#555' : s.colors[name(w.winners[0])]
               return (
                 <div key={w.week}
-                  title={`Week ${w.week} · ${w.race.race_name}\n${w.winners.map(name).join(' & ')} — ${w.score}${shared ? ' (tie)' : ''}`}
+                  title={`Week ${w.week} · ${w.race.race_name}${shared ? ' (tie)' : ''}\n${lines.join('\n')}`}
                   style={{ aspectRatio: '1', borderRadius: 6, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#111', fontFamily: "'Barlow Condensed', sans-serif" }}>
                   {shared ? 'T' : w.week}
                 </div>
@@ -390,7 +393,7 @@ function FormTab({ s }) {
 // Season-to-date. One grid built on the Draft Efficiency layout: each pick
 // slot shows the efficiency ratio (current place ÷ pick number), the driver
 // in the slot, his current place (highlighted, top-5 / top-10 colors) with
-// the pick number, and how many places he moved after the latest race.
+// the pick number.
 // Above it, Roster Strength sums up each player's current drivers.
 const ROUND_NAMES = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth']
 
@@ -401,22 +404,9 @@ function placeTone(rk) {
   return { bg: 'rgba(160,160,160,0.12)', fg: 'var(--text)' }
 }
 
-function Move({ d }) {
-  if (!d || d.rank == null || d.prevRank == null) return null
-  const m = d.prevRank - d.rank
-  if (m === 0) return <span style={{ fontSize: 11, color: 'var(--dim)' }}>–</span>
-  return (
-    <span title={`${m > 0 ? 'Up' : 'Down'} ${Math.abs(m)} place${Math.abs(m) === 1 ? '' : 's'} after the latest race`}
-      style={{ fontSize: 11, fontWeight: 700, color: m > 0 ? GOOD : BAD, whiteSpace: 'nowrap' }}>
-      {m > 0 ? '▲' : '▼'}{Math.abs(m)}
-    </span>
-  )
-}
-
 function DraftTab({ s }) {
   const players = [...s.players].sort((a, b) => a.draft_position - b.draft_position)
   const thru = s.completed === 0 ? null : `through week ${s.nowWeek}`
-  const showMove = s.completed >= 2
 
   if (!s.completed) {
     return <Empty>Draft values appear once the first race of the season is complete.</Empty>
@@ -445,7 +435,7 @@ function DraftTab({ s }) {
     <>
       <Section
         title="Roster Strength"
-        note={`Season to date (${thru}): how each player's current drivers rank among all ${s.rankedCount} drivers by adjusted points.`}
+        note={`Season to date (${thru}): how each player's current drivers rank among all ${s.rankedCount} drivers by adjusted points. Avg place = average current place of the player's 5 drivers. Top 10 = drivers currently in the top 10. Beat pick = drivers whose current place is as good as or better than the overall pick used on them (taken 9th, now 3rd), i.e. a Draft Efficiency of 1.00 or lower.`}
       >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
           {roster.map((r, i) => (
@@ -498,8 +488,7 @@ function DraftTab({ s }) {
                         <span style={{ background: tone.bg, color: tone.fg, borderRadius: 6, padding: '1px 8px', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 15, letterSpacing: '0.03em' }}>
                           {c.rk ? ordinal(c.rk) : 'no results'}
                         </span>
-                        <span style={{ fontSize: 12, color: 'var(--dim)' }}>Pick {c.pick.pick_number}</span>
-                        {showMove && <Move d={c.driver} />}
+                        <span style={{ fontSize: 14, color: 'var(--muted)' }}>Pick {c.pick.pick_number}</span>
                       </div>
                     </td>
                   )
@@ -512,7 +501,6 @@ function DraftTab({ s }) {
           <span><b style={{ color: 'var(--green)' }}>Ratio ≤ 1.0</b> outperforming the pick</span>
           <span><b style={{ color: BAD }}>Ratio &gt; 2.0</b> well below the pick</span>
           <span><b style={{ color: 'var(--green)' }}>Place</b> top 5 · <b style={{ color: 'var(--gold)' }}>top 10</b></span>
-          {showMove && <span><b style={{ color: GOOD }}>▲</b>/<b style={{ color: BAD }}>▼</b> places moved after week {s.nowWeek}</span>}
           <span><b style={{ color: 'var(--gold)' }}>*</b> active sub or permanent swap in this slot</span>
         </div>
       </Section>
