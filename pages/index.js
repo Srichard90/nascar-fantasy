@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import Link from 'next/link'
+import { useSeason } from '../lib/season'
+import { playerColorMap } from '../lib/league'
 
 // ── Constants ──────────────────────────────────────────────────
 const MEDALS       = ['🥇', '🥈', '🥉']
-const PLAYER_COLORS = ['#3b82f6','#22c55e','#a855f7','#f97316','#ec4899']
 
 const th = {
   padding: '12px 16px',
@@ -31,8 +32,7 @@ function posColor(pos) {
 // ── Main page ──────────────────────────────────────────────────
 export default function StandingsPage() {
   // Season selector
-  const [allSeasons,  setAllSeasons]  = useState([])
-  const [seasonId,    setSeasonId]    = useState(null)
+  const { seasons: allSeasons, seasonId, ready } = useSeason()
   const [season,      setSeason]      = useState(null)
   const [loading,     setLoading]     = useState(true)
   const [dataLoading, setDataLoading] = useState(false)
@@ -48,18 +48,8 @@ export default function StandingsPage() {
   const [racesLoad,   setRacesLoad]   = useState(false)
   const [weekLoad,    setWeekLoad]    = useState(false)
 
-  // ── Load all seasons on mount ────────────────────────────────
-  useEffect(() => {
-    async function init() {
-      const { data: seasons } = await supabase
-        .from('seasons').select('*').order('season_year', { ascending: false })
-      setAllSeasons(seasons || [])
-      const active = (seasons || []).find(s => s.is_active) || seasons?.[0]
-      if (active) setSeasonId(active.season_id)
-      else setLoading(false)
-    }
-    init()
-  }, [])
+  // ── No seasons at all: stop the spinner ──────────────────────
+  useEffect(() => { if (ready && !seasonId) setLoading(false) }, [ready, seasonId])
 
   // ── Fetch standings for selected season ──────────────────────
   const fetchStandings = useCallback(async (sid) => {
@@ -205,30 +195,7 @@ export default function StandingsPage() {
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
   const race           = races.find(r => r.race_id === raceId)
-
-  // ── Season toggle ────────────────────────────────────────────
-  function SeasonToggle() {
-    if (allSeasons.length <= 1) return null
-    return (
-      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-        <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>Season:</span>
-        {[...allSeasons].sort((a,b)=>b.season_year-a.season_year).map(s=>(
-          <button key={s.season_id} onClick={()=>setSeasonId(s.season_id)} style={{
-            padding:'6px 14px', borderRadius:8,
-            border:`2px solid ${seasonId===s.season_id ? 'var(--red)' : 'var(--border2)'}`,
-            background: seasonId===s.season_id ? 'rgba(232,25,44,0.12)' : 'transparent',
-            color: seasonId===s.season_id ? 'var(--text)' : 'var(--muted)',
-            fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14,
-            letterSpacing:'0.05em', cursor:'pointer', transition:'all 0.15s',
-            display:'flex', alignItems:'center', gap:6,
-          }}>
-            {s.season_year}
-            {s.is_active && <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--green)', display:'inline-block' }} />}
-          </button>
-        ))}
-      </div>
-    )
-  }
+  const colors         = playerColorMap(standings.map(r => ({ player_name: r.players?.player_name })))
 
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:300 }}>
@@ -264,7 +231,6 @@ export default function StandingsPage() {
             <span style={{ color:'var(--gold)' }}>Win bonus: −10 pts per driver win</span>
           </p>
         </div>
-        <SeasonToggle />
       </div>
 
       {dataLoading ? (
@@ -300,6 +266,7 @@ export default function StandingsPage() {
                           {MEDALS[i] || <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, color:'var(--dim)', fontSize:16 }}>#{i+1}</span>}
                         </td>
                         <td style={{ padding:'14px 16px' }}>
+                          <span style={{ display:'inline-block', width:10, height:10, borderRadius:3, background:colors[row.players?.player_name], marginRight:8 }} />
                           <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:20, color: isFirst ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.02em' }}>
                             {row.players?.player_name}
                           </span>
@@ -399,7 +366,7 @@ export default function StandingsPage() {
                     {weekData.map((pd, i) => (
                       <div key={`hdr-${pd.player.player_id}`} style={{
                         padding:'14px 16px',
-                        borderBottom:`2px solid ${PLAYER_COLORS[i%5]}`,
+                        borderBottom:`2px solid ${colors[pd.player.player_name]}`,
                         borderRight: i < weekData.length-1 ? '1px solid var(--border)' : 'none',
                         display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
                       }}>
@@ -407,7 +374,7 @@ export default function StandingsPage() {
                           <div style={{ fontSize:11, color:'var(--muted)', fontFamily:"'Barlow Condensed'", letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:2 }}>
                             {i===0?'🏆':i===1?'🥈':i===2?'🥉':`#${i+1}`}
                           </div>
-                          <div style={{ fontFamily:"'Barlow Condensed'", fontSize:20, fontWeight:700, color:PLAYER_COLORS[i%5], letterSpacing:'0.04em', textTransform:'uppercase' }}>
+                          <div style={{ fontFamily:"'Barlow Condensed'", fontSize:20, fontWeight:700, color:'var(--text)', letterSpacing:'0.04em', textTransform:'uppercase' }}>
                             {pd.player.player_name}
                           </div>
                         </div>

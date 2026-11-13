@@ -1,28 +1,21 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSeason } from '../lib/season'
 
 export default function SchedulePage() {
-  const [season, setSeason] = useState(null)
+  const { season, seasonId, ready } = useSeason()
   const [races,  setRaces]  = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function load() {
-      const { data: s } = await supabase
-        .from('seasons').select('*').eq('is_active', true).single()
-      setSeason(s)
-      if (!s) { setLoading(false); return }
-
-      const { data: r } = await supabase
-        .from('races')
-        .select('*')
-        .eq('season_id', s.season_id)
-        .order('week_number', { ascending: true })
-      setRaces(r || [])
-      setLoading(false)
-    }
-    load()
-  }, [])
+    if (!ready) return
+    if (!seasonId) { setLoading(false); return }
+    let cancelled = false
+    setLoading(true)
+    supabase.from('races').select('*').eq('season_id', seasonId).order('week_number', { ascending: true })
+      .then(({ data: r }) => { if (!cancelled) { setRaces(r || []); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [ready, seasonId])
 
   // Find the next upcoming race for highlight
   const today = new Date()
@@ -44,7 +37,7 @@ export default function SchedulePage() {
   if (!season) return (
     <div style={{ textAlign:'center', padding:'80px 20px' }}>
       <div style={{ fontSize:48, marginBottom:12 }}>🗓️</div>
-      <p style={{ color:'var(--muted)', fontSize:17 }}>No active season found.</p>
+      <p style={{ color:'var(--muted)', fontSize:17 }}>No season found.</p>
     </div>
   )
 

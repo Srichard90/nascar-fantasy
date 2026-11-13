@@ -2,6 +2,7 @@ import '../styles/globals.css'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import { SeasonProvider, SeasonTiles } from '../lib/season'
 
 const NAV = [
   { href: '/',         label: 'Standings',     icon: '🏆' },
@@ -14,7 +15,9 @@ const NAV = [
 
 export default function App({ Component, pageProps }) {
   const router = useRouter()
+  const showSeason = !router.pathname.startsWith('/admin')
   return (
+    <SeasonProvider>
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <Head>
         <title>NASCAR-x Fantasy</title>
@@ -32,7 +35,7 @@ export default function App({ Component, pageProps }) {
         {/* Racing stripe across very top */}
         <div className="racing-bar" />
 
-        <div style={{
+        <div className="nav-bar" style={{
           maxWidth: 1100,
           margin: '0 auto',
           padding: '0 20px',
@@ -44,7 +47,7 @@ export default function App({ Component, pageProps }) {
           {/* Logo */}
           <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 22 }}>🏁</span>
-            <span style={{
+            <span className="hide-mobile" style={{
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: 24,
               letterSpacing: '0.08em',
@@ -54,12 +57,13 @@ export default function App({ Component, pageProps }) {
             </span>
           </Link>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* Nav links */}
           <div style={{ display: 'flex', gap: 4 }}>
             {NAV.map(n => {
               const active = router.pathname === n.href
               return (
-                <Link key={n.href} href={n.href} style={{
+                <Link key={n.href} href={n.href} title={n.label} aria-label={n.label} className="nav-link" style={{
                   textDecoration: 'none',
                   display: 'flex',
                   alignItems: 'center',
@@ -76,12 +80,22 @@ export default function App({ Component, pageProps }) {
                   transition: 'all 0.15s',
                 }}>
                   <span style={{ fontSize: 13 }}>{n.icon}</span>
-                  <span className="hide-mobile">{n.label}</span>
+                  <span className="nav-label">{n.label}</span>
                 </Link>
               )
             })}
           </div>
+          </div>
         </div>
+
+        {/* Season bar */}
+        {showSeason && (
+          <div style={{ borderTop: '1px solid #1f1f1f', background: '#0d0d0d' }}>
+            <div className="nav-bar" style={{ maxWidth: 1100, margin: '0 auto', padding: '7px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+              <SeasonTiles />
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Page content */}
@@ -90,8 +104,11 @@ export default function App({ Component, pageProps }) {
       </main>
 
       <style>{`
-        @media (max-width: 500px) { .hide-mobile { display: none; } }
+        @media (max-width: 640px) { .hide-mobile { display: none; } }
+        @media (max-width: 960px) { .nav-label { display: none; } }
+        @media (max-width: 640px) { .nav-link { padding: 6px 7px !important; } .nav-bar { padding: 0 12px !important; } }
       `}</style>
     </div>
+    </SeasonProvider>
   )
 }

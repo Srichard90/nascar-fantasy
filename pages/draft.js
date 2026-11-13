@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSeason } from '../lib/season'
+import { playerColorMap } from '../lib/league'
 
-const PLAYER_COLORS = ['#3b82f6','#22c55e','#a855f7','#f97316','#ec4899']
 
 function getPickOwner(pickNumber, totalPlayers, players) {
   const round      = Math.ceil(pickNumber / totalPlayers)
@@ -19,41 +20,6 @@ function Loader() {
 }
 
 // ── Season toggle buttons (shared) ────────────────────────────
-function SeasonToggle({ allSeasons, seasonId, onSelect }) {
-  if (!allSeasons || allSeasons.length <= 1) return null
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-      <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>
-        Season:
-      </span>
-      {[...allSeasons].sort((a, b) => b.season_year - a.season_year).map(s => (
-        <button key={s.season_id} onClick={() => onSelect(s.season_id)} style={{
-          padding: '6px 14px',
-          borderRadius: 8,
-          border: `2px solid ${seasonId === s.season_id ? 'var(--red)' : 'var(--border2)'}`,
-          background: seasonId === s.season_id ? 'rgba(232,25,44,0.12)' : 'transparent',
-          color: seasonId === s.season_id ? 'var(--text)' : 'var(--muted)',
-          fontFamily: "'Barlow Condensed', sans-serif",
-          fontWeight: 700,
-          fontSize: 14,
-          letterSpacing: '0.05em',
-          cursor: 'pointer',
-          transition: 'all 0.15s',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}>
-          {s.season_year}
-          {s.is_active && (
-            <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--green)', display:'inline-block' }} />
-          )}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// ── Draft board (shared between live and historical) ──────────
 function DraftBoard({ players, picks, session, swaps = [] }) {
   const teamMap = {}
   players.forEach(p => { teamMap[p.player_id] = [] })
@@ -87,8 +53,8 @@ function DraftBoard({ players, picks, session, swaps = [] }) {
               fontSize:18,
               letterSpacing:'0.06em',
               textTransform:'uppercase',
-              color: PLAYER_COLORS[i%5],
-              borderBottom: `2px solid ${PLAYER_COLORS[i%5]}`,
+              color: 'var(--text)',
+              borderBottom: `2px solid ${playerColorMap(players)[p.player_name]}`,
               paddingBottom:8,
               marginBottom:10,
             }}>
@@ -261,8 +227,7 @@ function HistoricalDraft({ season }) {
 
 // ── Main draft page ────────────────────────────────────────────
 export default function DraftPage() {
-  const [allSeasons,  setAllSeasons]  = useState([])
-  const [seasonId,    setSeasonId]    = useState(null)
+  const { seasons: allSeasons, seasonId } = useSeason()
   const [loading,     setLoading]     = useState(true)
 
   // Live draft state (active season only)
@@ -275,19 +240,6 @@ export default function DraftPage() {
   const [error,      setError]      = useState('')
   const [search,     setSearch]     = useState('')
   const [dataLoading, setDataLoading] = useState(false)
-
-  // Load all seasons on mount
-  useEffect(() => {
-    async function init() {
-      const { data: seasons } = await supabase
-        .from('seasons').select('*').order('season_year', { ascending: false })
-      setAllSeasons(seasons || [])
-      const active = (seasons || []).find(s => s.is_active) || seasons?.[0]
-      if (active) setSeasonId(active.season_id)
-      else setLoading(false)
-    }
-    init()
-  }, [])
 
   // Load active season draft data
   const fetchState = useCallback(async () => {
@@ -395,7 +347,6 @@ export default function DraftPage() {
           </h1>
           <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season?.season_name}</p>
         </div>
-        <SeasonToggle allSeasons={allSeasons} seasonId={seasonId} onSelect={id => { setSeasonId(id); setSearch('') }} />
       </div>
 
       {/* Historical view */}
@@ -431,8 +382,7 @@ export default function DraftPage() {
                       <p style={{ color:'var(--muted)', margin:0, fontSize:14 }}>All {totalPicks} drivers have been selected.</p>
                     </div>
                   ) : (() => {
-                    const clockIdx  = players.findIndex(p => p.player_id === onClock?.player_id)
-                    const clockColor = clockIdx >= 0 ? PLAYER_COLORS[clockIdx % 5] : 'var(--text)'
+                    const clockColor = onClock ? playerColorMap(players)[onClock.player_name] : 'var(--text)'
                     return (
                       <div style={{
                         background: `${clockColor}11`,

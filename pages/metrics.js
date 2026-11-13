@@ -1,814 +1,626 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/router'
+import { useSeason } from '../lib/season'
+import { loadSeasonData, computeSeasonStats, WIN_BONUS } from '../lib/league'
+import SeasonRaceChart from '../components/SeasonRaceChart'
 
-const PLAYER_COLORS = ['#3b82f6','#22c55e','#a855f7','#f97316','#ec4899']
-const METRICS = [
-  { id: 'bestworst',   label: 'Best & Worst Driver',       icon: '🏅' },
-  { id: 'draftperf',   label: 'Draft Performance',          icon: '🎯' },
-  { id: 'drafteff',    label: 'Draft Position Efficiency',  icon: '⚡' },
-  { id: 'available',   label: 'Available Drivers',          icon: '🚙' },
-  { id: 'rankings',    label: 'Driver Rankings',            icon: '🏁' },
+const TABS = [
+  { id: 'race',    label: 'Season Race',       icon: '📈' },
+  { id: 'weekly',  label: 'Weekly Wins & H2H', icon: '⚔️' },
+  { id: 'teams',   label: 'Team Breakdown',    icon: '👥' },
+  { id: 'form',    label: 'Hot & Cold',        icon: '🔥' },
+  { id: 'draft',   label: 'Draft Report Card', icon: '🎯' },
+  { id: 'drivers', label: 'Driver Rankings',   icon: '🏁' },
 ]
 
-// ── Shared cell style helpers ──────────────────────────────────
-function heatColor(val, min, max, invert = false) {
-  // invert=false: low = green (good in our scoring system)
-  // For draft performance rank: 1 = best = green
-  if (val === null || val === undefined) return 'transparent'
-  const ratio = max === min ? 0.5 : (val - min) / (max - min)
-  const r = invert ? ratio : 1 - ratio
-  // green (#22c55e) to red (#ef4444) via neutral
-  const g = Math.round(34 + (197 - 34) * (1 - r))
-  const red = Math.round(239 + (34 - 239) * (1 - r))
-  return `rgba(${red},${g},78,0.18)`
+// ── Shared styles ───────────────────────────────────────────────
+const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14 }
+const th = {
+  padding: '11px 14px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)',
+  fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.08em',
+  textTransform: 'uppercase', color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap',
 }
+const td = { padding: '11px 14px', textAlign: 'center', borderTop: '1px solid var(--border)', fontSize: 15, color: 'var(--text)' }
+const num = { fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: '0.04em' }
+const label = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)' }
+const GOOD = '#4ade80', BAD = '#f87171'
 
 function ordinal(n) {
-  if (!n) return '—'
-  const s = ['th','st','nd','rd']
-  const v = n % 100
+  if (n == null) return '—'
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
+const fmt = x => (x == null ? '—' : x.toLocaleString())
+const signed = x => (x == null ? '—' : x > 0 ? `+${x}` : `${x}`)
 
-export default function MetricsPage() {
-  const [allSeasons,  setAllSeasons]  = useState([])
-  const [seasonId,    setSeasonId]    = useState(null)
-  const [season,      setSeason]      = useState(null)
-  const [metric,      setMetric]      = useState('bestworst')
-  const [useAdj,      setUseAdj]      = useState(true)   // toggle: adjusted vs base points
-  const [loading,     setLoading]     = useState(true)
-  const [dataLoad,    setDataLoad]    = useState(false)
-
-  // Core data
-  const [players,     setPlayers]     = useState([])  // season players ordered by draft_position
-  const [picks,       setPicks]       = useState([])  // draft picks with driver info
-  const [driverTotals, setDriverTotals] = useState({}) // driver_id -> total finish pts (season)
-  const [driverRanks,  setDriverRanks]  = useState({}) // driver_id -> rank among ALL drivers with results
-  const [totalDriverCount, setTotalDriverCount] = useState(0)
-  const [allDrivers,   setAllDrivers]   = useState([]) // all drivers in the season
-  const [activeSubs,   setActiveSubs]   = useState([]) // currently active injury subs
-  const [allSwaps,     setAllSwaps]     = useState([]) // all permanent swaps
-  const [driverWins,   setDriverWins]   = useState({}) // driver_id -> number of P1 finishes
-
-  // Load seasons
-  useEffect(() => {
-    async function init() {
-      const { data: seasons } = await supabase
-        .from('seasons').select('*').order('season_year', { ascending: false })
-      setAllSeasons(seasons || [])
-      const active = (seasons || []).find(s => s.is_active) || seasons?.[0]
-      if (active) setSeasonId(active.season_id)
-      else setLoading(false)
-    }
-    init()
-  }, [])
-
-  // Load data when season changes
-  useEffect(() => {
-    if (!seasonId) return
-    const s = allSeasons.find(x => x.season_id === seasonId)
-    setSeason(s || null)
-    setDataLoad(true)
-    let cancelled = false
-
-    async function load() {
-      try {
-        // Players sorted by draft position
-        const { data: pl } = await supabase
-          .from('players').select('*')
-          .eq('season_id', seasonId)
-          .order('draft_position')
-
-        // Active subs and swaps (needed for Available Drivers metric)
-        const { data: activeSubs } = await supabase
-          .from('driver_substitutions')
-          .select('sub_driver_id, original_driver_id, player_id')
-          .eq('season_id', seasonId)
-          .is('end_week', null)  // only currently active subs
-
-        const { data: allSwaps } = await supabase
-          .from('driver_swaps')
-          .select('original_driver_id, swap_driver_id, player_id, start_week')
-          .eq('season_id', seasonId)
-
-        // All drivers for this season (for Available Drivers metric)
-        const { data: allDrivers } = await supabase
-          .from('drivers')
-          .select('driver_id, driver_name, car_number, team')
-          .eq('season_id', seasonId)
-
-        // Draft session
-        const { data: sess } = await supabase
-          .from('draft_sessions').select('draft_session_id')
-          .eq('season_id', seasonId).single()
-
-        // Picks with driver info
-        const { data: pks } = sess
-          ? await supabase
-              .from('draft_picks')
-              .select('*, drivers(driver_name, car_number)')
-              .eq('draft_session_id', sess.draft_session_id)
-              .order('pick_number')
-          : { data: [] }
-
-        // All completed races for this season
-        const { data: races } = await supabase
-          .from('races').select('race_id')
-          .eq('season_id', seasonId)
-          .eq('is_complete', true)
-
-        // All results for those races — fetch in parallel, collect safely
-        let allResults = []
-        if (races && races.length) {
-          const raceResults = await Promise.all(races.map(async race => {
-            const { data: res } = await supabase
-              .from('race_results')
-              .select('driver_id, finish_position')
-              .eq('race_id', race.race_id)
-            return res || []
-          }))
-          allResults = raceResults.flat()
-        }
-
-        if (cancelled) return
-
-        // Sum finish positions per driver (lower = better)
-        // Coerce driver_id to number for consistent key type
-        const totals = {}
-        const wins   = {}
-        allResults.forEach(r => {
-          const did = parseInt(r.driver_id, 10)
-          totals[did] = (totals[did] || 0) + r.finish_position
-          if (r.finish_position === 1) wins[did] = (wins[did] || 0) + 1
-        })
-
-        // Rank ALL drivers by adjusted points (base - wins*10) — lower is better
-        const allDriversWithTotals = Object.entries(totals)
-          .map(([id, total]) => {
-            const did = parseInt(id, 10)
-            const w   = wins[did] || 0
-            return { id: did, total, adjTotal: total - w * 10 }
-          })
-          .sort((a, b) => a.adjTotal - b.adjTotal)
-
-        const ranks = {}
-        const totalDriverCount = allDriversWithTotals.length
-        allDriversWithTotals.forEach((d, i) => { ranks[d.id] = i + 1 })
-
-        setPlayers(pl || [])
-        setPicks(pks || [])
-        setDriverTotals(totals)
-        setDriverRanks(ranks)
-        setAllDrivers(allDrivers || [])
-        setActiveSubs(activeSubs || [])
-        setAllSwaps(allSwaps || [])
-        setDriverWins(wins)
-        setTotalDriverCount(totalDriverCount)
-      } catch (err) {
-        console.error('Metrics load error:', err)
-      } finally {
-        if (!cancelled) { setDataLoad(false); setLoading(false) }
-      }
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [seasonId, allSeasons])
-
-  // ── Derived data ───────────────────────────────────────────────
-
-  // Per-player picks, grouped and ordered by round (pick_number within player)
-  function playerPicksByRound(playerId) {
-    return picks
-      .filter(p => p.player_id === playerId)
-      .sort((a, b) => a.round_number - b.round_number)
-  }
-
-  // Resolve the actual current driver for a pick slot (swap > sub > original)
-  function effectiveDriverId(pick) {
-    const swap = (allSwaps || []).find(s =>
-      s.player_id === pick.player_id && s.original_driver_id === pick.driver_id
-    )
-    if (swap) return swap.swap_driver_id
-
-    const sub = (activeSubs || []).find(s =>
-      s.player_id === pick.player_id && s.original_driver_id === pick.driver_id
-    )
-    if (sub) return sub.sub_driver_id
-
-    return pick.driver_id
-  }
-
-  function effectiveDriverInfo(pick) {
-    const eid = effectiveDriverId(pick)
-    if (eid === pick.driver_id) return pick.drivers // original joined data
-    const d = (allDrivers || []).find(d => d.driver_id === eid)
-    return d ? { driver_name: d.driver_name, car_number: d.car_number } : pick.drivers
-  }
-
-  // Number of rounds (max picks any player has)
-  const maxRounds = players.length
-    ? Math.max(...players.map(p => playerPicksByRound(p.player_id).length), 0)
-    : 0
-
-  const ordinalLabels = ['First','Second','Third','Fourth','Fifth','Sixth',
-    'Seventh','Eighth','Ninth','Tenth']
-
-  // ── Season toggle ──────────────────────────────────────────────
-  function SeasonToggle() {
-    if (allSeasons.length <= 1) return null
-    return (
-      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-        <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>Season:</span>
-        {[...allSeasons].sort((a,b)=>b.season_year-a.season_year).map(s=>(
-          <button key={s.season_id} onClick={()=>setSeasonId(s.season_id)} style={{
-            padding:'6px 14px', borderRadius:8,
-            border:`2px solid ${seasonId===s.season_id ? 'var(--red)' : 'var(--border2)'}`,
-            background: seasonId===s.season_id ? 'rgba(232,25,44,0.12)' : 'transparent',
-            color: seasonId===s.season_id ? 'var(--text)' : 'var(--muted)',
-            fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14,
-            letterSpacing:'0.05em', cursor:'pointer', transition:'all 0.15s',
-            display:'flex', alignItems:'center', gap:6,
-          }}>
-            {s.season_year}
-            {s.is_active && <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--green)', display:'inline-block' }} />}
-          </button>
-        ))}
+// ── Small building blocks ───────────────────────────────────────
+function Section({ title, note, children, right }) {
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 28, color: 'var(--text)', margin: 0 }}>{title}</h2>
+          {note && <p style={{ color: 'var(--muted)', fontSize: 14, margin: '4px 0 0', maxWidth: 760 }}>{note}</p>}
+        </div>
+        {right}
       </div>
-    )
-  }
-
-  if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:300 }}>
-      <span style={{ color:'var(--muted)', fontFamily:"'Barlow Condensed'", fontSize:18, letterSpacing:'0.1em' }}>LOADING…</span>
+      {children}
     </div>
   )
+}
 
+function PlayerName({ name, color, size = 17 }) {
   return (
-    <div className="fade-up">
-      {/* Header row */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:16, marginBottom:28 }}>
-        <div>
-          <h1 style={{ fontSize:48, color:'var(--text)', margin:0 }}>Metrics</h1>
-          <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season?.season_name}</p>
-        </div>
-        <div style={{ display:'flex', flexDirection:'column', gap:10, alignItems:'flex-end' }}>
-          <SeasonToggle />
-          {/* Metric selector */}
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
-            {METRICS.map(m => (
-              <button key={m.id} onClick={()=>setMetric(m.id)} style={{
-                padding:'7px 16px', borderRadius:8,
-                border:`2px solid ${metric===m.id ? 'var(--red)' : 'var(--border2)'}`,
-                background: metric===m.id ? 'rgba(232,25,44,0.12)' : 'var(--surface)',
-                color: metric===m.id ? 'var(--text)' : 'var(--muted)',
-                fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:13,
-                letterSpacing:'0.05em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.15s',
-                display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap',
-              }}>
-                <span>{m.icon}</span> {m.label}
-              </button>
-            ))}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+      <span style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
+      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: size, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text)' }}>{name}</span>
+    </span>
+  )
+}
+
+function Tag({ children, tone = 'neutral' }) {
+  const tones = {
+    neutral: ['rgba(160,160,160,0.15)', 'var(--muted)'],
+    good:    ['rgba(74,222,128,0.14)', GOOD],
+    bad:     ['rgba(248,113,113,0.14)', BAD],
+    gold:    ['rgba(245,197,24,0.14)', 'var(--gold)'],
+    swap:    ['rgba(99,102,241,0.2)', '#a5b4fc'],
+  }
+  const [bg, fg] = tones[tone]
+  return (
+    <span style={{ background: bg, color: fg, borderRadius: 5, padding: '1px 7px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+      {children}
+    </span>
+  )
+}
+
+function Stat({ title, value, sub }) {
+  return (
+    <div>
+      <div style={label}>{title}</div>
+      <div style={{ ...num, fontSize: 26, color: 'var(--text)', lineHeight: 1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--dim)' }}>{sub}</div>}
+    </div>
+  )
+}
+
+function Empty({ children }) {
+  return (
+    <div style={{ ...card, padding: '48px 24px', textAlign: 'center' }}>
+      <p style={{ color: 'var(--muted)', fontSize: 16, margin: 0 }}>{children}</p>
+    </div>
+  )
+}
+
+function Scroll({ children, minWidth }) {
+  return (
+    <div style={{ ...card, overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth }}>{children}</table>
+    </div>
+  )
+}
+
+function OwnerChip({ owner, stats }) {
+  if (!owner) return <span style={{ color: 'var(--dim)' }}>Available</span>
+  const p = stats.playerById.get(owner.playerId)
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <PlayerName name={p?.player_name} color={stats.colors[p?.player_name]} size={14} />
+      {owner.label && <Tag tone={owner.label === 'swap' ? 'swap' : 'gold'}>{owner.label}</Tag>}
+    </span>
+  )
+}
+
+// ── Tab: Season Race ────────────────────────────────────────────
+function RaceTab({ s }) {
+  if (!s.completed) return <Empty>No completed races yet this season.</Empty>
+  const final = s.raceSeries[s.raceSeries.length - 1]
+  const order = final.order
+  const done = s.completed === s.totalRaces
+  return (
+    <>
+      <Section
+        title="Season Race"
+        note={`How far each player was behind 1st place (adjusted points) after every race. ${done ? 'Final' : 'Current'} leader is on the top line. Hover for the standings after any week.`}
+      >
+        <div style={{ ...card, padding: '16px 12px 8px' }}>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 8px 8px' }}>
+            {order.map(id => {
+              const p = s.playerById.get(id)
+              return <PlayerName key={id} name={p.player_name} color={s.colors[p.player_name]} size={14} />
+            })}
           </div>
-          {/* Points mode toggle — only for metrics that support it */}
-          {['bestworst','draftperf','drafteff'].includes(metric) && (
-            <div style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end' }}>
-              <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)' }}>Points:</span>
-              {[{ label:'Adjusted', val:true }, { label:'Base', val:false }].map(opt => (
-                <button key={String(opt.val)} onClick={() => setUseAdj(opt.val)} style={{
-                  padding:'4px 12px', borderRadius:6,
-                  border:`1px solid ${useAdj === opt.val ? 'var(--gold)' : 'var(--border2)'}`,
-                  background: useAdj === opt.val ? 'rgba(245,197,24,0.12)' : 'transparent',
-                  color: useAdj === opt.val ? 'var(--gold)' : 'var(--dim)',
-                  fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:12,
-                  letterSpacing:'0.05em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.15s',
-                }}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <SeasonRaceChart series={s.raceSeries} players={s.players} colors={s.colors} />
         </div>
-      </div>
+      </Section>
 
-      {dataLoad ? (
-        <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)', fontFamily:"'Barlow Condensed'", letterSpacing:'0.1em', fontSize:16 }}>LOADING…</div>
-      ) : picks.length === 0 ? (
-        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'60px', textAlign:'center' }}>
-          <p style={{ color:'var(--muted)', fontSize:16 }}>No draft data found for this season.</p>
+      <Section title="Race Summary" note={`${s.leadChanges} lead change${s.leadChanges === 1 ? '' : 's'} this season.`}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
+          {order.map((id, i) => {
+            const p = s.playerById.get(id), r = s.raceSummary[id]
+            return (
+              <div key={id} style={{ ...card, padding: 16, borderTop: `3px solid ${s.colors[p.player_name]}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <PlayerName name={p.player_name} color={s.colors[p.player_name]} size={19} />
+                  <span style={{ ...label, color: i === 0 ? 'var(--gold)' : 'var(--muted)' }}>{ordinal(i + 1)}{done ? ' · final' : ''}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Stat title="Weeks in 1st" value={r.weeksLed} sub={`of ${s.completed}`} />
+                  <Stat title="Biggest lead" value={r.biggestLead ? `${r.biggestLead}` : '—'} sub={r.biggestLeadWeek ? `after wk ${r.biggestLeadWeek}` : 'never led alone'} />
+                  <Stat title="Best / worst spot" value={`${ordinal(r.bestPos)} / ${ordinal(r.worstPos)}`} />
+                  <Stat title="Furthest behind" value={r.biggestDeficit ? `${r.biggestDeficit}` : '—'} sub="points" />
+                </div>
+              </div>
+            )
+          })}
         </div>
-      ) : (
-        <>
-          {/* ── METRIC 1: Best & Worst Driver ── */}
-          {metric === 'bestworst' && (
-            <div>
-              <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Best &amp; Worst Driver</h2>
-              <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                Based on {useAdj ? 'adjusted points (Base Pts − Wins × 10)' : 'base finish position points'} this season — lower is better.
-              </p>
-              <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                  <thead>
-                    <tr>
-                      {['Player','Best Driver', useAdj ? 'Adj. Pts' : 'Base Pts','Rank','Worst Driver', useAdj ? 'Adj. Pts' : 'Base Pts','Rank'].map((h,i) => (
-                        <th key={i} style={{
-                          padding:'12px 16px', background:'var(--surface2)',
-                          borderBottom:'1px solid var(--border)',
-                          fontFamily:"'Barlow Condensed', sans-serif",
-                          fontSize:13, fontWeight:700, letterSpacing:'0.08em',
-                          textTransform:'uppercase', color:'var(--muted)',
-                          textAlign: i === 0 ? 'left' : 'center',
-                          whiteSpace:'nowrap',
-                        }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
+      </Section>
+    </>
+  )
+}
+
+// ── Tab: Weekly Wins & Head-to-Head ─────────────────────────────
+function WeeklyTab({ s }) {
+  if (!s.completed) return <Empty>No completed races yet this season.</Empty>
+  const ids = [...s.players].map(p => p.player_id)
+    .sort((a, b) => s.weekly[b].wins - s.weekly[a].wins || s.weekly[a].avg - s.weekly[b].avg)
+  const name = id => s.playerById.get(id).player_name
+  return (
+    <>
+      <Section title="Weekly Winners" note="The player with the lowest adjusted score each race wins the week. Hover a square for the details.">
+        <div style={{ ...card, padding: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {s.weekWinners.map(w => {
+              const shared = w.winners.length > 1
+              const color = shared ? '#555' : s.colors[name(w.winners[0])]
+              return (
+                <div key={w.week}
+                  title={`Week ${w.week} · ${w.race.race_name}\n${w.winners.map(name).join(' & ')} — ${w.score}${shared ? ' (tie)' : ''}`}
+                  style={{ width: 26, height: 26, borderRadius: 5, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#111', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  {shared ? 'T' : w.week}
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 12 }}>
+            {ids.map(id => <PlayerName key={id} name={name(id)} color={s.colors[name(id)]} size={14} />)}
+            {s.weekWinners.some(w => w.winners.length > 1) && <span style={{ fontSize: 13, color: 'var(--muted)' }}><b style={{ color: 'var(--text)' }}>T</b> = tied week</span>}
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Weekly Record">
+        <Scroll minWidth={760}>
+          <thead><tr>
+            <th style={{ ...th, textAlign: 'left' }}>Player</th>
+            <th style={th}>Weekly wins</th>
+            <th style={th}>Last-place weeks</th>
+            <th style={th}>Avg score</th>
+            <th style={th}>Best week</th>
+            <th style={th}>Worst week</th>
+            <th style={th}>Longest win streak</th>
+          </tr></thead>
+          <tbody>
+            {ids.map(id => {
+              const w = s.weekly[id]
+              return (
+                <tr key={id}>
+                  <td style={{ ...td, textAlign: 'left' }}><PlayerName name={name(id)} color={s.colors[name(id)]} /></td>
+                  <td style={td}><span style={num}>{w.wins}</span>{w.sharedWins > 0 && <div style={{ fontSize: 11, color: 'var(--dim)' }}>{w.sharedWins} tied</div>}</td>
+                  <td style={td}><span style={{ ...num, color: 'var(--muted)' }}>{w.lasts}</span></td>
+                  <td style={td}><span style={num}>{w.avg}</span></td>
+                  <td style={td}><span style={num}>{w.best.score}</span><div style={{ fontSize: 12, color: 'var(--dim)' }}>Wk {w.best.week} · {w.best.race.track_name || w.best.race.race_name}</div></td>
+                  <td style={td}><span style={{ ...num, color: 'var(--muted)' }}>{w.worst.score}</span><div style={{ fontSize: 12, color: 'var(--dim)' }}>Wk {w.worst.week} · {w.worst.race.track_name || w.worst.race.race_name}</div></td>
+                  <td style={td}><span style={num}>{w.longestStreak}</span></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </Scroll>
+      </Section>
+
+      <Section title="Head-to-Head" note="Each row player's week-by-week record against each column player: who had the lower adjusted score that race (wins–losses, ties in parentheses).">
+        <Scroll minWidth={140 + ids.length * 130}>
+          <thead><tr>
+            <th style={{ ...th, textAlign: 'left' }}>vs →</th>
+            {ids.map(id => <th key={id} style={th}><PlayerName name={name(id)} color={s.colors[name(id)]} size={14} /></th>)}
+          </tr></thead>
+          <tbody>
+            {ids.map(a => (
+              <tr key={a}>
+                <td style={{ ...td, textAlign: 'left' }}><PlayerName name={name(a)} color={s.colors[name(a)]} /></td>
+                {ids.map(b => {
+                  if (a === b) return <td key={b} style={{ ...td, background: 'var(--surface2)', color: 'var(--dim)' }}>—</td>
+                  const r = s.h2h[a][b]
+                  const tone = r.w > r.l ? GOOD : r.w < r.l ? BAD : 'var(--muted)'
+                  return (
+                    <td key={b} style={{ ...td, background: r.w > r.l ? 'rgba(74,222,128,0.07)' : r.w < r.l ? 'rgba(248,113,113,0.07)' : 'transparent' }}>
+                      <span style={{ ...num, color: tone }}>{r.w}–{r.l}</span>
+                      {r.t > 0 && <span style={{ fontSize: 12, color: 'var(--dim)' }}> ({r.t})</span>}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </Scroll>
+      </Section>
+    </>
+  )
+}
+
+// ── Tab: Team Breakdown ─────────────────────────────────────────
+function TeamsTab({ s }) {
+  if (!s.completed) return <Empty>No completed races yet this season.</Empty>
+  const teams = [...s.teams].sort((a, b) => a.total - b.total)
+  return (
+    <Section
+      title="Team Breakdown"
+      note={`Every driver who scored for each team, counted only for the weeks he was on it (swaps and injury subs included). Pts = finish positions − ${WIN_BONUS} per win. MVP and Weak Link are the best and worst average finish among drivers with 5+ races.`}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 500px), 1fr))', gap: 16 }}>
+        {teams.map((t, i) => {
+          const color = s.colors[t.player.player_name]
+          return (
+            <div key={t.player.player_id} style={{ ...card, overflow: 'hidden', borderTop: `3px solid ${color}` }}>
+              <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <PlayerName name={t.player.player_name} color={color} size={21} />
+                  <div style={{ ...label, marginTop: 2 }}>{ordinal(i + 1)} · {fmt(t.total)} adj. pts</div>
+                </div>
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <Stat title="Avg finish" value={t.avgFinish ?? '—'} />
+                  <Stat title="Wins" value={t.wins} />
+                  <Stat title="Top 5" value={t.top5} />
+                  <Stat title="Top 10" value={t.top10} />
+                </div>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 470 }}>
+                  <thead><tr>
+                    <th style={{ ...th, textAlign: 'left' }}>Driver</th>
+                    <th style={th} title="Weeks this driver counted for the team">Wks</th>
+                    <th style={th}>Avg</th>
+                    <th style={th}>Wins</th>
+                    <th style={th}>T10</th>
+                    <th style={th} title="Finishes of 30th or worse">30+</th>
+                    <th style={th}>Pts</th>
+                  </tr></thead>
                   <tbody>
-                    {players.map((pl, pi) => {
-                      const myPicks = playerPicksByRound(pl.player_id)
-                      const withTotals = myPicks
-                        .filter(p => {
-                          const did = parseInt(effectiveDriverId(p), 10)
-                          return driverTotals[did] !== undefined
-                        })
-                        .map(p => {
-                          const did = parseInt(effectiveDriverId(p), 10)
-                          const w = driverWins[did] || 0
-                          const driverInfo = effectiveDriverInfo(p)
-                          return { ...p, drivers: driverInfo, total: driverTotals[did], adjTotal: (driverTotals[did] || 0) - w * 10, rank: driverRanks[did] }
-                        })
-                        .sort((a,b) => useAdj ? a.adjTotal - b.adjTotal : a.total - b.total)
-
-                      const best  = withTotals[0]
-                      const worst = withTotals[withTotals.length - 1]
-
-                      return (
-                        <tr key={pl.player_id} style={{ borderTop:'1px solid var(--border)' }}>
-                          <td style={{ padding:'14px 16px', fontFamily:"'Barlow Condensed', sans-serif", fontSize:18, fontWeight:700, color:PLAYER_COLORS[pi%5], letterSpacing:'0.03em', textTransform:'uppercase' }}>
-                            {pl.player_name}
-                          </td>
-                          {/* Best */}
-                          <td style={{ padding:'14px 16px', textAlign:'center' }}>
-                            <div style={{ fontWeight:600, color:'var(--green)', fontSize:15 }}>{best?.drivers?.driver_name || '—'}</div>
-                            <div style={{ color:'var(--gold)', fontSize:12 }}>#{best?.drivers?.car_number}</div>
-                          </td>
-                          <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--green)' }}>
-                            {useAdj ? (best?.adjTotal ?? '—') : (best?.total ?? '—')}
-                          </td>
-                          <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'var(--green)' }}>
-                            {best?.rank ? ordinal(best.rank) : '—'}
-                          </td>
-                          {/* Worst */}
-                          <td style={{ padding:'14px 16px', textAlign:'center' }}>
-                            <div style={{ fontWeight:600, color:'#f87171', fontSize:15 }}>{worst?.drivers?.driver_name || '—'}</div>
-                            <div style={{ color:'var(--gold)', fontSize:12 }}>#{worst?.drivers?.car_number}</div>
-                          </td>
-                          <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'#f87171' }}>
-                            {useAdj ? (worst?.adjTotal ?? '—') : (worst?.total ?? '—')}
-                          </td>
-                          <td style={{ padding:'14px 16px', textAlign:'center', fontFamily:"'Barlow Condensed', sans-serif", fontSize:15, fontWeight:700, color:'#f87171' }}>
-                            {worst?.rank ? ordinal(worst.rank) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
+                    {t.rows.map(r => (
+                      <tr key={r.key}>
+                        <td style={{ ...td, textAlign: 'left' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>{r.driver.driver_name}</span>
+                            <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{r.driver.car_number}</span>
+                            {r.label && <Tag tone={r.label === 'swap' ? 'swap' : 'gold'}>{r.label}</Tag>}
+                            {t.best === r.key && <Tag tone="good">MVP</Tag>}
+                            {t.worst === r.key && <Tag tone="bad">Weak link</Tag>}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--dim)' }}>
+                            Round {r.round}
+                            {!r.fullSeason && (r.contiguous
+                              ? ` · wk ${r.firstWeek}${r.lastWeek !== r.firstWeek ? `–${r.lastWeek}` : ''}`
+                              : ` · ${r.weeksOnTeam} of ${s.completed} wks`)}
+                          </div>
+                        </td>
+                        <td style={{ ...td, color: 'var(--muted)' }}>{r.weeksOnTeam}</td>
+                        <td style={td}><span style={{ ...num, fontSize: 20 }}>{r.avgFinish ?? '—'}</span></td>
+                        <td style={td}>{r.wins ? <Tag tone="gold">🏆 {r.wins}</Tag> : <span style={{ color: 'var(--dim)' }}>—</span>}</td>
+                        <td style={td}>{r.top10}</td>
+                        <td style={{ ...td, color: r.bad ? 'var(--muted)' : 'var(--dim)' }}>{r.bad || '—'}</td>
+                        <td style={td}><span style={{ ...num, fontSize: 20 }}>{fmt(r.adj)}</span></td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
+          )
+        })}
+      </div>
+    </Section>
+  )
+}
+
+// ── Tab: Hot & Cold ─────────────────────────────────────────────
+function Trend({ delta, unit = '' }) {
+  if (delta == null) return <span style={{ color: 'var(--dim)' }}>—</span>
+  const up = delta > 0, flat = Math.abs(delta) < 0.5
+  return (
+    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: flat ? 'var(--muted)' : up ? GOOD : BAD, whiteSpace: 'nowrap' }}>
+      {flat ? '→ steady' : up ? `▲ ${delta}${unit} better` : `▼ ${Math.abs(delta)}${unit} worse`}
+    </span>
+  )
+}
+
+function FormTab({ s }) {
+  const f = s.form
+  const done = s.completed === s.totalRaces
+  if (!f.ready) return <Empty>Hot &amp; Cold appears after {f.n + 3} completed races ({s.completed} so far).</Empty>
+  const span = done ? `final ${f.n} races` : `last ${f.n} races`
+  const hot = [...f.drivers].sort((a, b) => b.delta - a.delta).slice(0, 6).filter(d => d.delta > 0)
+  const cold = [...f.drivers].sort((a, b) => a.delta - b.delta).slice(0, 6).filter(d => d.delta < 0)
+
+  const DriverList = ({ title, items }) => (
+    <div style={{ ...card, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text)' }}>{title}</div>
+      {items.length === 0 ? <div style={{ padding: 16, color: 'var(--muted)' }}>Nobody right now.</div> : items.map(d => (
+        <div key={d.driver.driver_id} style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 600 }}>{d.driver.driver_name} <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.driver.car_number}</span></div>
+            <div style={{ fontSize: 12, marginTop: 2 }}><OwnerChip owner={d.owner} stats={s} /></div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 14, color: 'var(--text)' }}>avg <b>{d.earlier}</b> → <b>{d.recent}</b></div>
+            <div style={{ fontSize: 12, color: 'var(--dim)' }}>{span}: {d.finishes.map(x => `P${x.pos}`).join(' · ')}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <>
+      <Section title="Player Form" note={`Average weekly adjusted score over the ${span} (weeks ${f.weeks[0]}–${f.weeks[f.weeks.length - 1]}) compared with the rest of the season. Lower is better; ★ marks a weekly win.`}>
+        <Scroll minWidth={700}>
+          <thead><tr>
+            <th style={{ ...th, textAlign: 'left' }}>Player</th>
+            <th style={th}>{done ? 'Final 5' : 'Last 5'} (by week)</th>
+            <th style={th}>Last-5 avg</th>
+            <th style={th}>Earlier avg</th>
+            <th style={th}>Trend</th>
+          </tr></thead>
+          <tbody>
+            {f.players.map(p => (
+              <tr key={p.player.player_id}>
+                <td style={{ ...td, textAlign: 'left' }}><PlayerName name={p.player.player_name} color={s.colors[p.player.player_name]} /></td>
+                <td style={td}>
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                    {p.last.map(w => (
+                      <span key={w.week} title={`Week ${w.week}`} style={{ minWidth: 38, padding: '3px 4px', borderRadius: 6, background: 'var(--surface2)', border: `1px solid ${w.won ? 'var(--gold)' : 'var(--border)'}`, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                        {w.adj}{w.won ? '★' : ''}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td style={td}><span style={num}>{p.recent}</span></td>
+                <td style={{ ...td, color: 'var(--muted)' }}><span style={num}>{p.earlier}</span></td>
+                <td style={td}><Trend delta={p.delta} unit=" pts" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </Scroll>
+      </Section>
+
+      <Section title="Drivers on the Move" note={`Biggest change in average finish over the ${span} compared with earlier in the season (drivers with 3+ races in each).`}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 16 }}>
+          <DriverList title="🔥 Heating up" items={hot} />
+          <DriverList title="🧊 Cooling off" items={cold} />
+        </div>
+      </Section>
+    </>
+  )
+}
+
+// ── Tab: Draft Report Card ──────────────────────────────────────
+function DraftTab({ s }) {
+  const d = s.draft
+  const players = [...s.players].sort((a, b) => a.draft_position - b.draft_position)
+  const ranked = s.completed > 0
+  return (
+    <>
+      <Section
+        title="Draft Report Card"
+        note={ranked
+          ? `Value compares where a driver was drafted with where he finished in the season driver rankings (out of ${s.rankedCount}). Taken 10th and finished 4th = +6. This grades the pick itself, so later swaps don't change it.`
+          : 'Values appear once races are completed.'}
+      >
+        {ranked && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 16 }}>
+            {d.byPlayer.map((b, i) => (
+              <div key={b.player.player_id} style={{ ...card, padding: 16, borderTop: `3px solid ${s.colors[b.player.player_name]}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <PlayerName name={b.player.player_name} color={s.colors[b.player.player_name]} size={19} />
+                  {i === 0 && <Tag tone="gold">Best draft</Tag>}
+                </div>
+                <div style={{ ...num, fontSize: 34, color: b.total > 0 ? GOOD : b.total < 0 ? BAD : 'var(--text)', marginTop: 6 }}>{signed(b.total)}</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+                  {b.steal && <div>Best pick: <b style={{ color: 'var(--text)' }}>{b.steal.driver?.driver_name}</b> ({signed(b.steal.value)})</div>}
+                  {b.bust && <div>Worst pick: <b style={{ color: 'var(--text)' }}>{b.bust.driver?.driver_name}</b> ({signed(b.bust.value)})</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Scroll minWidth={110 + players.length * 160}>
+          <thead><tr>
+            <th style={{ ...th, textAlign: 'left' }}>Round</th>
+            {players.map(p => <th key={p.player_id} style={th}><PlayerName name={p.player_name} color={s.colors[p.player_name]} size={15} /></th>)}
+          </tr></thead>
+          <tbody>
+            {Array.from({ length: d.rounds }, (_, r) => (
+              <tr key={r}>
+                <td style={{ ...td, textAlign: 'left', ...label, fontSize: 13 }}>Round {r + 1}</td>
+                {players.map(p => {
+                  const row = d.rows.find(x => x.pick.player_id === p.player_id && x.pick.round_number === r + 1)
+                  if (!row) return <td key={p.player_id} style={{ ...td, color: 'var(--dim)' }}>—</td>
+                  const v = row.value
+                  return (
+                    <td key={p.player_id} style={td}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{row.driver?.driver_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--dim)' }}>
+                        Pick {row.pick.pick_number}{ranked && row.rank != null && <> → {ordinal(row.rank)}</>}
+                      </div>
+                      {ranked && v != null && (
+                        <div style={{ ...num, fontSize: 20, color: v >= 3 ? GOOD : v <= -3 ? BAD : 'var(--muted)' }}>{signed(v)}</div>
+                      )}
+                      {row.swappedOutWeek && <Tag tone="swap">swapped out wk {row.swappedOutWeek}</Tag>}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </Scroll>
+        {ranked && (
+          <div style={{ marginTop: 10, fontSize: 13, color: 'var(--muted)', display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+            <span><b style={{ color: GOOD }}>+3 or better</b>: steal</span>
+            <span><b style={{ color: BAD }}>−3 or worse</b>: reach</span>
+          </div>
+        )}
+      </Section>
+
+      {ranked && d.gotAway.length > 0 && (
+        <Section title="The Ones That Got Away" note="Best-finishing drivers nobody drafted.">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {d.gotAway.map(x => (
+              <div key={x.driver_id} style={{ ...card, padding: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{x.driver_name} <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{x.car_number}</span></div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>Finished <b style={{ color: 'var(--text)' }}>{ordinal(x.rank)}</b> · avg {x.avgFinish} · {x.wins} win{x.wins === 1 ? '' : 's'}</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+    </>
+  )
+}
+
+// ── Tab: Driver Rankings ────────────────────────────────────────
+function DriversTab({ s }) {
+  const [filter, setFilter] = useState('all')
+  const rows = s.drivers.filter(d => filter === 'all' || (filter === 'owned' ? d.owner : !d.owner))
+  const asOf = s.completed ? (s.completed === s.totalRaces ? 'end of season' : `after week ${s.nowWeek}`) : 'draft day'
+  return (
+    <Section
+      title="Driver Rankings"
+      note={`All drivers ranked by adjusted points (finish positions − ${WIN_BONUS} per win). Lower is better. Owner is as of ${asOf}.`}
+      right={
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[['all', 'All'], ['owned', 'Owned'], ['available', 'Available']].map(([k, l]) => (
+            <button key={k} onClick={() => setFilter(k)} style={{
+              padding: '5px 12px', borderRadius: 7, cursor: 'pointer',
+              border: `1px solid ${filter === k ? 'var(--gold)' : 'var(--border2)'}`,
+              background: filter === k ? 'rgba(245,197,24,0.12)' : 'transparent',
+              color: filter === k ? 'var(--gold)' : 'var(--muted)',
+              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '0.05em', textTransform: 'uppercase',
+            }}>{l}</button>
+          ))}
+        </div>
+      }
+    >
+      {rows.length === 0 ? <Empty>No drivers in this view.</Empty> : (
+        <Scroll minWidth={820}>
+          <thead><tr>
+            <th style={th}>Rank</th>
+            <th style={{ ...th, textAlign: 'left' }}>Driver</th>
+            <th style={{ ...th, textAlign: 'left' }}>Owner</th>
+            <th style={th}>Avg</th>
+            <th style={th}>Wins</th>
+            <th style={th}>Top 5</th>
+            <th style={th}>Top 10</th>
+            <th style={th}>Base</th>
+            <th style={{ ...th, color: 'var(--gold)' }}>Adj. Pts</th>
+          </tr></thead>
+          <tbody>
+            {rows.map(d => (
+              <tr key={d.driver_id}>
+                <td style={td}><span style={{ ...num, fontSize: 20, color: d.rank && d.rank <= 3 ? 'var(--gold)' : d.rank && d.rank <= 10 ? 'var(--text)' : 'var(--muted)' }}>{d.rank ?? '—'}</span></td>
+                <td style={{ ...td, textAlign: 'left' }}>
+                  <div><span style={{ fontWeight: 600 }}>{d.driver_name}</span> <span style={{ color: 'var(--gold)', fontSize: 12 }}>#{d.car_number}</span></div>
+                  {d.team && <div style={{ fontSize: 12, color: 'var(--dim)' }}>{d.team}</div>}
+                </td>
+                <td style={{ ...td, textAlign: 'left' }}><OwnerChip owner={d.owner} stats={s} /></td>
+                <td style={td}>{d.avgFinish ?? '—'}</td>
+                <td style={td}>{d.wins ? <Tag tone="gold">🏆 {d.wins}</Tag> : <span style={{ color: 'var(--dim)' }}>—</span>}</td>
+                <td style={td}>{d.starts ? d.top5 : '—'}</td>
+                <td style={td}>{d.starts ? d.top10 : '—'}</td>
+                <td style={{ ...td, color: 'var(--muted)' }}>{d.starts ? fmt(d.base) : '—'}</td>
+                <td style={td}><span style={{ ...num, color: 'var(--gold)' }}>{d.starts ? fmt(d.adj) : '—'}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </Scroll>
+      )}
+    </Section>
+  )
+}
+
+// ── Page ────────────────────────────────────────────────────────
+export default function MetricsPage() {
+  const router = useRouter()
+  const { seasonId, season, isActiveSeason, ready } = useSeason()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const tab = TABS.some(t => t.id === router.query.tab) ? router.query.tab : 'race'
+  const setTab = id => router.replace({ pathname: '/metrics', query: { tab: id } }, undefined, { shallow: true, scroll: false })
+
+  useEffect(() => {
+    if (!ready) return
+    if (!seasonId) { setLoading(false); return }
+    let cancelled = false
+    setLoading(true); setError('')
+    loadSeasonData(seasonId)
+      .then(d => { if (!cancelled) setData(d) })
+      .catch(e => { if (!cancelled) { console.error('Metrics load error:', e); setError('Could not load this season.') } })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [seasonId, ready])
+
+  const stats = useMemo(() => (data ? computeSeasonStats(data) : null), [data])
+
+  const status = !stats ? '' : stats.completed === 0
+    ? 'Season not started'
+    : stats.completed === stats.totalRaces ? `Final · all ${stats.totalRaces} races` : `Through week ${stats.nowWeek} of ${stats.totalRaces}`
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 48, color: 'var(--text)', margin: 0 }}>
+          Metrics
+          {season && !isActiveSeason && (
+            <span style={{ marginLeft: 12, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, color: 'var(--muted)', fontWeight: 400, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Archive</span>
           )}
+        </h1>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 4 }}>
+          {season?.season_name}{status && <> &nbsp;·&nbsp; {status}</>}
+        </p>
+      </div>
 
-          {/* ── METRIC 2: Draft Performance ── */}
-          {metric === 'draftperf' && (() => {
-            // Build live rank map based on toggle — either adjusted or base points
-            const liveRankEntries = Object.entries(driverTotals)
-              .map(([id, base]) => {
-                const did = parseInt(id, 10)
-                const w   = driverWins[did] || 0
-                return { id: did, score: useAdj ? base - w * 10 : base }
-              })
-              .sort((a, b) => a.score - b.score)
-            const liveRanks = {}
-            liveRankEntries.forEach((d, i) => { liveRanks[d.id] = i + 1 })
+      <div role="tablist" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6, marginBottom: 24 }}>
+        {TABS.map(t => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} style={{
+            padding: '8px 14px', borderRadius: 8, cursor: 'pointer', flexShrink: 0,
+            border: `2px solid ${tab === t.id ? 'var(--red)' : 'var(--border2)'}`,
+            background: tab === t.id ? 'rgba(232,25,44,0.12)' : 'var(--surface)',
+            color: tab === t.id ? 'var(--text)' : 'var(--muted)',
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 14,
+            letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+            display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
 
-            // Collect all rank values for optional heat coloring
-            const allRanks = []
-            players.forEach(pl => {
-              playerPicksByRound(pl.player_id).forEach(p => {
-                const r = liveRanks[parseInt(effectiveDriverId(p), 10)]
-                if (r) allRanks.push(r)
-              })
-            })
-            const minRank = Math.min(...allRanks)
-            const maxRank = Math.max(...allRanks)
-
-            return (
-              <div>
-                <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Draft Performance</h2>
-                <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  Current overall rank of each drafted driver by {useAdj ? 'adjusted points (Base Pts − Wins × 10)' : 'base finish position points'} — lower is better.
-                </p>
-                <div style={{ overflowX:'auto', borderRadius:14, border:'1px solid var(--border)' }}>
-                  <table style={{ borderCollapse:'collapse', width:'100%', minWidth: 140 + players.length * 120 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ padding:'12px 20px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', width:140 }}>
-                          Pick
-                        </th>
-                        {players.map((pl, pi) => (
-                          <th key={pl.player_id} style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:20, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:PLAYER_COLORS[pi%5], textAlign:'center', whiteSpace:'nowrap' }}>
-                            {pl.player_name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from({ length: maxRounds }).map((_, roundIdx) => (
-                        <tr key={roundIdx} style={{ borderTop:'1px solid var(--border)' }}>
-                          <td style={{ padding:'12px 20px', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:14, fontWeight:700, color:'var(--muted)', letterSpacing:'0.05em', textTransform:'uppercase', whiteSpace:'nowrap' }}>
-                            {ordinalLabels[roundIdx] || `Pick ${roundIdx+1}`} Pick
-                          </td>
-                          {players.map((pl, pi) => {
-                            const myPicks = playerPicksByRound(pl.player_id)
-                            const pick = myPicks[roundIdx]
-                            const effectiveDid = pick ? parseInt(effectiveDriverId(pick), 10) : null
-                            const rank = effectiveDid ? liveRanks[effectiveDid] : null
-                            const driverInfo = pick ? effectiveDriverInfo(pick) : null
-                            const isSubstituted = pick && effectiveDid !== parseInt(pick.driver_id, 10)
-                            return (
-                              <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center' }}>
-                                {pick ? (
-                                  <div>
-                                    <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: rank <= 5 ? 'var(--green)' : rank <= 10 ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.04em', lineHeight:1 }}>
-                                      {rank ?? '—'}
-                                    </div>
-                                    <div style={{ fontSize:10, color:'var(--dim)', marginTop:1 }}>of {totalDriverCount}</div>
-                                    <div style={{ fontSize:14, color: isSubstituted ? 'var(--gold)' : 'var(--muted)', marginTop:2 }}>
-                                      {driverInfo?.driver_name}{isSubstituted ? ' *' : ''}
-                                    </div>
-                                  </div>
-                                ) : <span style={{ color:'var(--dim)' }}>—</span>}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ marginTop:12, fontSize:13, color:'var(--muted)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:'0.04em', display:'flex', gap:20, flexWrap:'wrap' }}>
-                  <span><span style={{ color:'var(--green)' }}>■</span> Top 5 rank</span>
-                  <span><span style={{ color:'var(--gold)' }}>■</span> Top 10 rank</span>
-                  <span><span style={{ color:'var(--gold)' }}>■ *</span> Active sub or permanent swap in this slot</span>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* ── METRIC 3: Draft Position Efficiency ── */}
-          {metric === 'drafteff' && (() => {
-            // Build live rank map based on toggle
-            const liveRankEntries = Object.entries(driverTotals)
-              .map(([id, base]) => {
-                const did = parseInt(id, 10)
-                const w   = driverWins[did] || 0
-                return { id: did, score: useAdj ? base - w * 10 : base }
-              })
-              .sort((a, b) => a.score - b.score)
-            const liveRanks = {}
-            liveRankEntries.forEach((d, i) => { liveRanks[d.id] = i + 1 })
-
-            const allEff = []
-            players.forEach(pl => {
-              playerPicksByRound(pl.player_id).forEach((p, idx) => {
-                const rank = liveRanks[parseInt(effectiveDriverId(p), 10)]
-                if (rank) {
-                  const pickPos = p.pick_number || idx + 1
-                  allEff.push(rank / pickPos)
-                }
-              })
-            })
-            const minEff = Math.min(...allEff)
-            const maxEff = Math.max(...allEff)
-
-            return (
-              <div>
-                <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Draft Position Efficiency</h2>
-                <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  Current driver rank (by {useAdj ? 'adjusted points' : 'base points'}) ÷ overall draft pick number. Below 1.0 = outperforming. Above 1.0 = underperforming.
-                </p>
-                <div style={{ overflowX:'auto', borderRadius:14, border:'1px solid var(--border)' }}>
-                  <table style={{ borderCollapse:'collapse', width:'100%', minWidth: 140 + players.length * 120 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ padding:'12px 20px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', width:140 }}>
-                          Pick
-                        </th>
-                        {players.map((pl, pi) => (
-                          <th key={pl.player_id} style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:20, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:PLAYER_COLORS[pi%5], textAlign:'center', whiteSpace:'nowrap' }}>
-                            {pl.player_name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from({ length: maxRounds }).map((_, roundIdx) => (
-                        <tr key={roundIdx} style={{ borderTop:'1px solid var(--border)' }}>
-                          <td style={{ padding:'12px 20px', borderRight:'1px solid var(--border)', fontFamily:"'Barlow Condensed', sans-serif", fontSize:14, fontWeight:700, color:'var(--muted)', letterSpacing:'0.05em', textTransform:'uppercase', whiteSpace:'nowrap' }}>
-                            {ordinalLabels[roundIdx] || `Pick ${roundIdx+1}`} Pick
-                          </td>
-                          {players.map((pl, pi) => {
-                            const myPicks = playerPicksByRound(pl.player_id)
-                            const pick = myPicks[roundIdx]
-                            const effectiveDid = pick ? parseInt(effectiveDriverId(pick), 10) : null
-                            const rank = effectiveDid ? liveRanks[effectiveDid] : null
-                            const pickPos = pick ? pick.pick_number : roundIdx + 1
-                            const eff = rank ? (rank / pickPos) : null
-                            const driverInfo = pick ? effectiveDriverInfo(pick) : null
-                            const isSubstituted = pick && effectiveDid !== parseInt(pick.driver_id, 10)
-
-                            // Color text based on whether above/below 1.0
-                            const textColor = eff === null ? 'var(--dim)'
-                              : eff <= 1   ? 'var(--green)'
-                              : eff <= 2   ? 'var(--text)'
-                              : '#f87171'
-
-                            return (
-                              <td key={pl.player_id} style={{ padding:'12px 16px', borderRight:'1px solid var(--border)', textAlign:'center' }}>
-                                {pick && eff !== null ? (
-                                  <div>
-                                    <div style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:26, color: textColor, letterSpacing:'0.04em', lineHeight:1 }}>
-                                      {eff.toFixed(2)}
-                                    </div>
-                                    <div style={{ fontSize:14, color: isSubstituted ? 'var(--gold)' : 'var(--muted)', marginTop:3 }}>
-                                      {driverInfo?.driver_name}{isSubstituted ? ' *' : ''}
-                                    </div>
-                                    <div style={{ fontSize:12, color:'var(--dim)', marginTop:2 }}>
-                                      {ordinal(rank)} place / Pick {pickPos}
-                                    </div>
-                                  </div>
-                                ) : pick ? (
-                                  <div>
-                                    <div style={{ fontSize:14, color: isSubstituted ? 'var(--gold)' : 'var(--dim)' }}>{driverInfo?.driver_name}{isSubstituted ? ' *' : ''}</div>
-                                    <div style={{ fontSize:12, color:'var(--dim)' }}>no results</div>
-                                  </div>
-                                ) : <span style={{ color:'var(--dim)' }}>—</span>}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ marginTop:12, fontSize:13, color:'var(--muted)', fontFamily:"'Barlow Condensed', sans-serif", letterSpacing:'0.04em', display:'flex', gap:20, flexWrap:'wrap' }}>
-                  <span><span style={{ color:'var(--green)' }}>■</span> ≤ 1.0 — outperforming draft position</span>
-                  <span><span style={{ color:'#f87171' }}>■</span> &gt; 2.0 — significantly underperforming</span>
-                  <span><span style={{ color:'var(--gold)' }}>■ *</span> Active sub or permanent swap in this slot</span>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* ── METRIC 4: Available Drivers ── */}
-          {metric === 'available' && (() => {
-            const draftedIds    = new Set(picks.map(p => p.driver_id))
-            const subInIds      = new Set((activeSubs || []).map(s => s.sub_driver_id))
-            const swappedOutIds = new Set((allSwaps || []).map(s => s.original_driver_id))
-            const swapInIds     = new Set((allSwaps || []).map(s => s.swap_driver_id))
-
-            // Unavailable = drafted and NOT swapped out, OR actively subbing in, OR picked up via swap
-            const unavailableIds = new Set([
-              ...([...draftedIds].filter(id => !swappedOutIds.has(id))),
-              ...subInIds,
-              ...swapInIds,
-            ])
-
-            // Global rank across ALL drivers by adjusted points
-            const allWithTotals = (allDrivers || [])
-              .filter(d => driverTotals[d.driver_id] !== undefined)
-              .map(d => {
-                const w = driverWins[d.driver_id] || 0
-                return { ...d, total: driverTotals[d.driver_id], adjTotal: driverTotals[d.driver_id] - w * 10 }
-              })
-              .sort((a, b) => a.adjTotal - b.adjTotal)
-            const allRankMap = {}
-            allWithTotals.forEach((d, i) => { allRankMap[d.driver_id] = i + 1 })
-
-            const available = (allDrivers || [])
-              .filter(d => !unavailableIds.has(d.driver_id))
-              .map(d => ({ ...d, total: driverTotals[d.driver_id] ?? null, rank: allRankMap[d.driver_id] ?? null }))
-              .sort((a, b) => {
-                const aAdj = a.total !== null ? a.total - (driverWins[a.driver_id] || 0) * 10 : null
-                const bAdj = b.total !== null ? b.total - (driverWins[b.driver_id] || 0) * 10 : null
-                if (aAdj === null && bAdj === null) return 0
-                if (aAdj === null) return 1
-                if (bAdj === null) return -1
-                return aAdj - bAdj
-              })
-
-            return (
-              <div>
-                <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Available Drivers</h2>
-                <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  Undrafted drivers this season sorted by total accumulated finish points — lower is better.
-                  Drivers on active injury subs are excluded. Drivers permanently swapped out are shown as available.
-                  Rank is among all {(allDrivers||[]).length} drivers in the season.
-                </p>
-                {available.length === 0 ? (
-                  <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'40px', textAlign:'center' }}>
-                    <p style={{ color:'var(--muted)', fontSize:16 }}>All drivers have been drafted.</p>
-                  </div>
-                ) : (
-                  <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
-                    <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                      <thead>
-                        <tr style={{ background:'var(--surface2)' }}>
-                          {[
-                              { label:'Rank', center:true },
-                              { label:'#', center:false },
-                              { label:'Driver', center:false },
-                              { label:'Team', center:false },
-                              { label:'Base Pts', center:true },
-                              { label:'Wins', center:true },
-                              { label:'Adj. Pts', center:true },
-                            ].map(h => (
-                              <th key={h.label} style={{
-                                padding:'12px 16px', borderBottom:'2px solid var(--border)',
-                                fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
-                                letterSpacing:'0.08em', textTransform:'uppercase',
-                                color: h.label === 'Adj. Pts' ? 'var(--gold)' : 'var(--muted)',
-                                textAlign: h.center ? 'center' : 'left', whiteSpace:'nowrap',
-                              }}>{h.label}</th>
-                            ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {available.map((d, i) => (
-                          <tr key={d.driver_id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:20, letterSpacing:'0.04em',
-                                color: d.rank && d.rank <= 5 ? 'var(--green)' : d.rank && d.rank <= 10 ? 'var(--gold)' : 'var(--muted)' }}>
-                                {d.rank ?? '—'}
-                              </span>
-                            </td>
-                            <td style={{ padding:'12px 16px' }}>
-                              <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:15, color:'var(--gold)' }}>
-                                #{d.car_number}
-                              </span>
-                            </td>
-                            <td style={{ padding:'12px 16px', fontWeight:600, fontSize:15, color:'var(--text)' }}>
-                              {d.driver_name}
-                            </td>
-                            <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
-                              {d.team || '—'}
-                            </td>
-                            <td style={{ padding:'12px 16px', textAlign:'center', color:'var(--muted)', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, letterSpacing:'0.04em' }}>
-                              {d.total ?? '—'}
-                            </td>
-                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              {(driverWins[d.driver_id] || 0) > 0
-                                ? <span style={{ background:'rgba(245,197,24,0.15)', color:'var(--gold)', borderRadius:6, padding:'2px 10px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14 }}>🏆 {driverWins[d.driver_id]}</span>
-                                : <span style={{ color:'var(--dim)', fontSize:14 }}>—</span>}
-                            </td>
-                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color:'var(--gold)', letterSpacing:'0.04em' }}>
-                                {d.total !== null ? d.total - (driverWins[d.driver_id] || 0) * 10 : '—'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )
-          })()}
-
-          {/* ── METRIC 5: Driver Rankings ── */}
-          {metric === 'rankings' && (() => {
-            // Build driver -> player ownership map (respecting swaps)
-            const driverToPlayer = {}
-            const swappedOutInRankings = new Set((allSwaps || []).map(s => s.original_driver_id))
-            const swapInMap = {}
-            ;(allSwaps || []).forEach(s => { swapInMap[s.swap_driver_id] = s.player_id })
-
-            ;(picks || []).forEach(pk => {
-              if (!swappedOutInRankings.has(pk.driver_id)) {
-                // original driver still on this player's team
-                const pl = players.find(p => p.player_id === pk.player_id)
-                if (pl) driverToPlayer[pk.driver_id] = pl.player_name
-              }
-            })
-            // swap-in drivers belong to the player who swapped
-            Object.entries(swapInMap).forEach(([did, pid]) => {
-              const pl = players.find(p => p.player_id === pid)
-              if (pl) driverToPlayer[parseInt(did, 10)] = pl.player_name
-            })
-
-            const allWithTotals = (allDrivers || [])
-              .filter(d => driverTotals[d.driver_id] !== undefined)
-              .map(d => {
-                const basePts = driverTotals[d.driver_id]
-                const w       = driverWins[d.driver_id] || 0
-                return { ...d, basePts, wins: w, adjPts: basePts - w * 10 }
-              })
-              .sort((a, b) => a.adjPts - b.adjPts)
-
-            const noResults = (allDrivers || [])
-              .filter(d => driverTotals[d.driver_id] === undefined)
-              .sort((a, b) => parseInt(a.car_number) - parseInt(b.car_number))
-
-            const ranked = [...allWithTotals, ...noResults]
-
-            return (
-              <div>
-                <h2 style={{ fontSize:30, color:'var(--text)', margin:'0 0 6px' }}>Driver Rankings</h2>
-                <p style={{ color:'var(--muted)', fontSize:13, margin:'0 0 20px' }}>
-                  All {ranked.length} drivers ranked by adjusted points (Base Pts − Wins × 10) — lower is better.
-                </p>
-                <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
-                  <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                    <thead>
-                      <tr style={{ background:'var(--surface2)' }}>
-                        {[
-                          { label:'Rank', center:true },
-                          { label:'#', center:false },
-                          { label:'Driver', center:false },
-                          { label:'Team', center:false },
-                          { label:'Player', center:false },
-                          { label:'Base Pts', center:true },
-                          { label:'Wins', center:true },
-                          { label:'Adj. Pts', center:true },
-                        ].map((h, i) => (
-                          <th key={h.label} style={{
-                            padding:'12px 16px', borderBottom:'2px solid var(--border)',
-                            fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, fontWeight:700,
-                            letterSpacing:'0.08em', textTransform:'uppercase',
-                            color: h.label === 'Adj. Pts' ? 'var(--gold)' : 'var(--muted)',
-                            textAlign: h.center ? 'center' : 'left', whiteSpace:'nowrap',
-                          }}>{h.label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ranked.map((d, i) => {
-                        const hasResult = driverTotals[d.driver_id] !== undefined
-                        const rank     = hasResult ? i + 1 : null
-                        const basePts  = driverTotals[d.driver_id] ?? null
-                        const wins     = driverWins[d.driver_id] || 0
-                        const adjPts   = basePts !== null ? basePts - wins * 10 : null
-                        return (
-                          <tr key={d.driver_id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:20, letterSpacing:'0.04em',
-                                color: rank && rank <= 3 ? '#f5c518' : rank && rank <= 10 ? 'var(--green)' : 'var(--muted)' }}>
-                                {rank ?? '—'}
-                              </span>
-                            </td>
-                            <td style={{ padding:'12px 16px' }}>
-                              <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:15, color:'var(--gold)' }}>
-                                #{d.car_number}
-                              </span>
-                            </td>
-                            <td style={{ padding:'12px 16px', fontWeight:600, fontSize:15, color:'var(--text)' }}>
-                              {d.driver_name}
-                            </td>
-                            <td style={{ padding:'12px 16px', color:'var(--muted)', fontSize:14 }}>
-                              {d.team || '—'}
-                            </td>
-                            <td style={{ padding:'12px 16px', fontSize:14 }}>
-                              {driverToPlayer[d.driver_id]
-                                ? <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14,
-                                    color: PLAYER_COLORS[players.findIndex(p => p.player_name === driverToPlayer[d.driver_id]) % 5] }}>
-                                    {driverToPlayer[d.driver_id]}
-                                  </span>
-                                : <span style={{ color:'var(--dim)' }}>—</span>}
-                            </td>
-                            <td style={{ padding:'12px 16px', textAlign:'center', color:'var(--muted)', fontFamily:"'Bebas Neue', sans-serif", fontSize:22, letterSpacing:'0.04em' }}>
-                              {basePts ?? '—'}
-                            </td>
-                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              {wins > 0
-                                ? <span style={{ background:'rgba(245,197,24,0.15)', color:'var(--gold)', borderRadius:6, padding:'2px 10px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14 }}>🏆 {wins}</span>
-                                : <span style={{ color:'var(--dim)', fontSize:14 }}>—</span>}
-                            </td>
-                            <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:22, color: rank && rank <= 3 ? 'var(--gold)' : 'var(--text)', letterSpacing:'0.04em' }}>
-                                {adjPts ?? '—'}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })()}
-
+      {loading || !ready ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontFamily: "'Barlow Condensed'", letterSpacing: '0.1em', fontSize: 16 }}>LOADING…</div>
+      ) : error ? (
+        <Empty>{error}</Empty>
+      ) : !stats || !stats.hasDraft ? (
+        <Empty>No draft yet for this season. Metrics appear once the draft is done.</Empty>
+      ) : (
+        <>
+          {tab === 'race'    && <RaceTab s={stats} />}
+          {tab === 'weekly'  && <WeeklyTab s={stats} />}
+          {tab === 'teams'   && <TeamsTab s={stats} />}
+          {tab === 'form'    && <FormTab s={stats} />}
+          {tab === 'draft'   && <DraftTab s={stats} />}
+          {tab === 'drivers' && <DriversTab s={stats} />}
         </>
       )}
     </div>

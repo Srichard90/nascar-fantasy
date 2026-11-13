@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSeason } from '../lib/season'
 
 function posColor(pos) {
   if (!pos) return 'var(--dim)'
@@ -11,8 +12,7 @@ function posColor(pos) {
 }
 
 export default function WeeklyDetailPage() {
-  const [allSeasons, setAllSeasons] = useState([])
-  const [seasonId,   setSeasonId]   = useState(null)
+  const { seasons: allSeasons, seasonId, ready } = useSeason()
   const [season,     setSeason]     = useState(null)
   const [drivers,    setDrivers]    = useState([])   // sorted by car number
   const [races,      setRaces]      = useState([])   // sorted by week_number
@@ -21,18 +21,8 @@ export default function WeeklyDetailPage() {
   const [loading,    setLoading]    = useState(true)
   const [dataLoad,   setDataLoad]   = useState(false)
 
-  // Load all seasons on mount
-  useEffect(() => {
-    async function init() {
-      const { data: seasons } = await supabase
-        .from('seasons').select('*').order('season_year', { ascending: false })
-      setAllSeasons(seasons || [])
-      const active = (seasons || []).find(s => s.is_active) || seasons?.[0]
-      if (active) setSeasonId(active.season_id)
-      else setLoading(false)
-    }
-    init()
-  }, [])
+  // No seasons at all: stop the spinner
+  useEffect(() => { if (ready && !seasonId) setLoading(false) }, [ready, seasonId])
 
   // Load data whenever season changes
   useEffect(() => {
@@ -98,15 +88,16 @@ export default function WeeklyDetailPage() {
             setResultMap({ ...rm })
 
             // Compute season totals per driver (sum finish positions across all races)
+            // Adjusted points = finish positions − 10 per win (same as standings)
             const totals = {}
             Object.values(rm).forEach(raceResults => {
               Object.entries(raceResults).forEach(([driverId, res]) => {
                 const id = parseInt(driverId, 10)
-                totals[id] = (totals[id] || 0) + res.pos
+                totals[id] = (totals[id] || 0) + res.pos - (res.pos === 1 ? 10 : 0)
               })
             })
 
-            // Rank all drivers by total (lower = better)
+            // Rank all drivers by adjusted total (lower = better)
             const ranked = Object.entries(totals)
               .map(([id, total]) => ({ id: parseInt(id, 10), total }))
               .sort((a, b) => a.total - b.total)
@@ -128,7 +119,7 @@ export default function WeeklyDetailPage() {
 
     load()
     return () => { cancelled = true }
-  }, [seasonId])
+  }, [seasonId, allSeasons])
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
 
@@ -151,30 +142,10 @@ export default function WeeklyDetailPage() {
             )}
           </h1>
           <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>
-            {season?.season_name} &nbsp;·&nbsp; All drivers × all races &nbsp;·&nbsp; Sorted by car number
+            {season?.season_name} &nbsp;·&nbsp; All drivers × all races &nbsp;·&nbsp; Sorted by car number &nbsp;·&nbsp; Adj. Pts = finish positions − 10 per win
           </p>
         </div>
 
-        {/* Season toggle */}
-        {allSeasons.length > 1 && (
-          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-            <span style={{ fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>Season:</span>
-            {[...allSeasons].sort((a,b)=>b.season_year-a.season_year).map(s=>(
-              <button key={s.season_id} onClick={()=>setSeasonId(s.season_id)} style={{
-                padding:'6px 14px', borderRadius:8,
-                border:`2px solid ${seasonId===s.season_id ? 'var(--red)' : 'var(--border2)'}`,
-                background: seasonId===s.season_id ? 'rgba(232,25,44,0.12)' : 'transparent',
-                color: seasonId===s.season_id ? 'var(--text)' : 'var(--muted)',
-                fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:14,
-                letterSpacing:'0.05em', cursor:'pointer', transition:'all 0.15s',
-                display:'flex', alignItems:'center', gap:6,
-              }}>
-                {s.season_year}
-                {s.is_active && <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--green)', display:'inline-block' }} />}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {dataLoad ? (
@@ -236,7 +207,7 @@ export default function WeeklyDetailPage() {
                   fontSize:13, fontWeight:700, letterSpacing:'0.08em',
                   textTransform:'uppercase', color:'var(--muted)',
                   whiteSpace:'nowrap',
-                }}>Total Pts</th>
+                }} title="Finish positions − 10 per win">Adj. Pts</th>
                 <th style={{
                   background:'var(--surface2)',
                   borderBottom:'1px solid var(--border)',

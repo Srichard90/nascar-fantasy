@@ -505,13 +505,18 @@ function Method({ m }) {
   )
 }
 
-// ── Password gate ───────────────────────────────────────────────
-function PasswordGate({ onUnlock, authHeader }) {
+// ── Unlock gate ─────────────────────────────────────────────────
+// Deliberately NOT a login form: no <form>, no type="password", and
+// password-manager opt-outs, so browsers don't offer to save or autofill
+// it. The board asks for the code every time it's opened.
+const textSecurityOk = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('-webkit-text-security', 'disc')
+
+function UnlockGate({ onUnlock, authHeader }) {
   const [pwd, setPwd] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  async function submit(e) {
-    e.preventDefault()
+  async function submit() {
+    if (!pwd || busy) return
     setBusy(true); setErr('')
     const h = await authHeader()
     const r = await fetch('/api/strategy/unlock', {
@@ -519,23 +524,33 @@ function PasswordGate({ onUnlock, authHeader }) {
     })
     const j = await r.json().catch(() => ({}))
     setBusy(false)
+    setPwd('')
     if (r.ok) onUnlock()
-    else { setErr(j.error || 'Unlock failed.'); setPwd('') }
+    else setErr(j.error || 'Unlock failed.')
   }
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-      <form onSubmit={submit} style={{ ...card, width: '100%', maxWidth: 400, padding: '36px 32px', textAlign: 'center' }}>
+      <div role="group" aria-label="Unlock strategy board" style={{ ...card, width: '100%', maxWidth: 400, padding: '36px 32px', textAlign: 'center' }}>
         <div style={{ fontSize: 40 }}>🧠</div>
         <h2 style={{ fontSize: 32, margin: '6px 0 4px' }}>Strategy Board</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 14, margin: '0 0 20px' }}>Enter the strategy board password</p>
-        <input type="password" autoFocus value={pwd} onChange={e => setPwd(e.target.value)} placeholder="••••••••"
-          style={{ ...inp, width: '100%', marginBottom: 12 }} />
+        <p style={{ color: 'var(--muted)', fontSize: 14, margin: '0 0 20px' }}>Enter the unlock code. It's asked for every time you open the board.</p>
+        <input
+          type={textSecurityOk ? 'text' : 'password'}
+          name="board-unlock-code" id="board-unlock-code"
+          autoComplete={textSecurityOk ? 'off' : 'new-password'}
+          autoCorrect="off" autoCapitalize="off" spellCheck={false}
+          data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"
+          aria-label="Unlock code"
+          autoFocus value={pwd} onChange={e => setPwd(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder="••••••••"
+          style={{ ...inp, width: '100%', marginBottom: 12, WebkitTextSecurity: 'disc' }} />
         {err && <div style={{ color: '#ff6b7a', fontSize: 13, marginBottom: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || !pwd} style={{ ...btn('red'), width: '100%', opacity: busy || !pwd ? 0.4 : 1 }}>
+        <button type="button" onClick={submit} disabled={busy || !pwd} style={{ ...btn('red'), width: '100%', opacity: busy || !pwd ? 0.4 : 1 }}>
           {busy ? 'Checking…' : 'Unlock'}
         </button>
         <div style={{ marginTop: 16 }}><Link href="/admin" style={{ color: 'var(--muted)', fontSize: 13 }}>← Back to admin</Link></div>
-      </form>
+      </div>
     </div>
   )
 }
@@ -574,7 +589,20 @@ export default function StrategyPage() {
     setState('ready')
   }, [authHeader])
 
-  useEffect(() => { load() }, [load])
+  // Always start locked: clear any unlock left from an earlier visit, then
+  // ask for the code (after confirming the admin is signed in). Lock again
+  // when leaving the page or closing the tab.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      await fetch('/api/strategy/unlock', { method: 'DELETE' }).catch(() => {})
+      const h = await authHeader()
+      if (!cancelled) setState(h.Authorization ? 'locked' : 'login')
+    })()
+    const relock = () => { fetch('/api/strategy/unlock', { method: 'DELETE', keepalive: true }).catch(() => {}) }
+    window.addEventListener('pagehide', relock)
+    return () => { cancelled = true; window.removeEventListener('pagehide', relock); relock() }
+  }, [authHeader])
 
   // Live draft: refresh picks whenever the draft tables change.
   const liveSessionId = m?.draft?.sessionId
@@ -611,7 +639,7 @@ export default function StrategyPage() {
       </div>
     )
   }
-  if (state === 'locked') return <PasswordGate onUnlock={load} authHeader={authHeader} />
+  if (state === 'locked') return <UnlockGate onUnlock={load} authHeader={authHeader} />
   if (state === 'error') return <div style={{ ...card, color: '#ff6b7a' }}>⚠️ {err}</div>
 
   const modeText = {
