@@ -123,16 +123,18 @@ export default function WeeklyDetailPage() {
 
   const isActiveSeason = allSeasons.find(s => s.is_active)?.season_id === seasonId
 
-  // ── Click-to-sort (Driver, #, Adj. Pts, Rank). Default: car number. ──
+  // ── Click-to-sort (Driver, #, Adj. Pts, Rank, any week). Default: car number. ──
   const [sort, setSort] = useState({ key: 'num', dir: 1 })
   const carNum = d => { const n = parseInt(d.car_number, 10); return isNaN(n) ? Infinity : n }
   const sortedDrivers = useMemo(() => {
-    const val = {
-      driver: d => d.driver_name || '',
-      num:    d => carNum(d),
-      adj:    d => driverStats[d.driver_id]?.total,
-      rank:   d => driverStats[d.driver_id]?.rank,
-    }[sort.key]
+    const val = sort.key.startsWith('race:')
+      ? (raceId => d => resultMap[raceId]?.[d.driver_id]?.pos)(parseInt(sort.key.slice(5), 10))
+      : {
+          driver: d => d.driver_name || '',
+          num:    d => carNum(d),
+          adj:    d => driverStats[d.driver_id]?.total,
+          rank:   d => driverStats[d.driver_id]?.rank,
+        }[sort.key]
     return [...drivers].sort((a, b) => {
       const va = val(a), vb = val(b)
       // Drivers without results always sink to the bottom.
@@ -142,7 +144,7 @@ export default function WeeklyDetailPage() {
       const c = typeof va === 'string' ? va.localeCompare(vb) : va - vb
       return c * sort.dir || carNum(a) - carNum(b)
     })
-  }, [drivers, driverStats, sort])
+  }, [drivers, driverStats, resultMap, sort])
   const sortBy = key => setSort(prev => ({ key, dir: prev.key === key ? -prev.dir : 1 }))
   const sortProps = key => ({
     onClick: () => sortBy(key),
@@ -176,7 +178,7 @@ export default function WeeklyDetailPage() {
             )}
           </h1>
           <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>
-            {season?.season_name} &nbsp;·&nbsp; All drivers × all races &nbsp;·&nbsp; Click Driver, #, Adj. Pts or Rank to sort &nbsp;·&nbsp; Adj. Pts = finish positions − 10 per win
+            {season?.season_name} &nbsp;·&nbsp; All drivers × all races &nbsp;·&nbsp; Click any column header to sort &nbsp;·&nbsp; Adj. Pts = finish positions − 10 per win
           </p>
         </div>
 
@@ -268,8 +270,9 @@ export default function WeeklyDetailPage() {
                     fontSize:11, fontWeight:700, letterSpacing:'0.05em',
                     textTransform:'uppercase', color:'var(--text)',
                     overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                    maxWidth:90,
-                  }} title={`${r.race_name}${r.track_name ? ' — ' + r.track_name : ''}`}>
+                    maxWidth:90, cursor:'pointer', userSelect:'none',
+                  }} title={`${r.race_name}${r.track_name ? ' — ' + r.track_name : ''} · click to sort by this race`}
+                    onClick={() => sortBy(`race:${r.race_id}`)}>
                     {r.race_name}
                   </th>
                 ))}
@@ -302,9 +305,9 @@ export default function WeeklyDetailPage() {
                     textAlign:'center',
                     fontFamily:"'Barlow Condensed', sans-serif",
                     fontSize:12, fontWeight:600, letterSpacing:'0.06em',
-                    color:'var(--muted)',
-                  }}>
-                    Wk {r.week_number}
+                    color:'var(--muted)', cursor:'pointer', userSelect:'none', whiteSpace:'nowrap',
+                  }} {...sortProps(`race:${r.race_id}`)}>
+                    Wk {r.week_number}{sort.key === `race:${r.race_id}` && arrow(`race:${r.race_id}`)}
                   </th>
                 ))}
               </tr>

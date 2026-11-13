@@ -41,7 +41,7 @@ function Section({ title, note, children, right }) {
         <div>
           <h2 style={{ fontSize: 28, color: 'var(--text)', margin: 0 }}>{title}</h2>
           {note && (
-            <div style={{ color: 'var(--muted)', fontSize: 14, margin: '4px 0 0', maxWidth: 820, lineHeight: 1.55 }}>
+            <div style={{ color: 'var(--muted)', fontSize: 14, margin: '4px 0 0', lineHeight: 1.55 }}>
               {(Array.isArray(note) ? note : [note]).map((line, i) => (
                 <div key={i}>
                   {Array.isArray(line)
@@ -548,7 +548,50 @@ function DraftTab({ s }) {
 // ── Tab: Driver Rankings ────────────────────────────────────────
 function DriversTab({ s }) {
   const [filter, setFilter] = useState('all')
-  const rows = s.drivers.filter(d => filter === 'all' || (filter === 'owned' ? d.owner : !d.owner))
+  // Click-to-sort. Default: Rank. First click puts the "best" end on top
+  // (dir 1 = ascending for rank/points/avg, descending for counts).
+  const [sort, setSort] = useState({ key: 'rank', dir: 1 })
+  const ownerName = d => (d.owner ? s.playerById.get(d.owner.playerId)?.player_name : null)
+  const COLS = {
+    rank:   { get: d => d.rank, asc: true },
+    driver: { get: d => d.driver_name, asc: true, text: true },
+    owner:  { get: d => ownerName(d), asc: true, text: true },
+    avg:    { get: d => (d.starts ? d.avgFinish : null), asc: true },
+    wins:   { get: d => (d.starts ? d.wins : null), asc: false },
+    top5:   { get: d => (d.starts ? d.top5 : null), asc: false },
+    top10:  { get: d => (d.starts ? d.top10 : null), asc: false },
+    base:   { get: d => (d.starts ? d.base : null), asc: true },
+    adj:    { get: d => (d.starts ? d.adj : null), asc: true },
+  }
+  const col = COLS[sort.key]
+  const rows = s.drivers
+    .filter(d => filter === 'all' || (filter === 'owned' ? d.owner : !d.owner))
+    .sort((a, b) => {
+      const va = col.get(a), vb = col.get(b)
+      // Missing values (no results, or no owner) always sink to the bottom.
+      if (va == null && vb == null) return (a.rank ?? 1e9) - (b.rank ?? 1e9)
+      if (va == null) return 1
+      if (vb == null) return -1
+      const c = col.text ? va.localeCompare(vb) : va - vb
+      return (col.asc ? c : -c) * sort.dir || (a.rank ?? 1e9) - (b.rank ?? 1e9)
+    })
+  const sortBy = key => setSort(prev => ({ key, dir: prev.key === key ? -prev.dir : 1 }))
+  const H = ({ k, children, left, gold }) => {
+    const on = sort.key === k
+    const up = on && (COLS[k].asc ? sort.dir === 1 : sort.dir === -1)
+    return (
+      <th
+        role="button" tabIndex={0}
+        aria-sort={on ? (up ? 'ascending' : 'descending') : 'none'}
+        onClick={() => sortBy(k)}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sortBy(k) } }}
+        style={{ ...th, ...(left ? { textAlign: 'left' } : {}), ...(gold ? { color: 'var(--gold)' } : {}), cursor: 'pointer', userSelect: 'none' }}
+      >
+        {children}
+        <span style={{ marginLeft: 4, fontSize: 10, color: on ? 'var(--gold)' : 'var(--dim)' }}>{on ? (up ? '▲' : '▼') : '↕'}</span>
+      </th>
+    )
+  }
   const asOf = s.completed ? (s.completed === s.totalRaces ? 'end of season' : `after week ${s.nowWeek}`) : 'draft day'
   return (
     <Section
@@ -556,6 +599,7 @@ function DriversTab({ s }) {
       note={[
         `All drivers ranked by adjusted points (finish positions − ${WIN_BONUS} per win). Lower is better.`,
         ['Owner', `as of ${asOf}`],
+        ['Sort', 'click any column header; click again to reverse'],
       ]}
       right={
         <div style={{ display: 'flex', gap: 6 }}>
@@ -574,15 +618,15 @@ function DriversTab({ s }) {
       {rows.length === 0 ? <Empty>No drivers in this view.</Empty> : (
         <Scroll minWidth={820}>
           <thead><tr>
-            <th style={th}>Rank</th>
-            <th style={{ ...th, textAlign: 'left' }}>Driver</th>
-            <th style={{ ...th, textAlign: 'left' }}>Owner</th>
-            <th style={th}>Avg</th>
-            <th style={th}>Wins</th>
-            <th style={th}>Top 5</th>
-            <th style={th}>Top 10</th>
-            <th style={th}>Base</th>
-            <th style={{ ...th, color: 'var(--gold)' }}>Adj. Pts</th>
+            <H k="rank">Rank</H>
+            <H k="driver" left>Driver</H>
+            <H k="owner" left>Owner</H>
+            <H k="avg">Avg</H>
+            <H k="wins">Wins</H>
+            <H k="top5">Top 5</H>
+            <H k="top10">Top 10</H>
+            <H k="base">Base</H>
+            <H k="adj" gold>Adj. Pts</H>
           </tr></thead>
           <tbody>
             {rows.map(d => (
