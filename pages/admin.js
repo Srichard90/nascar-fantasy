@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '../lib/supabase'
 
 // ── Shared input style (prevents off-screen shift) ─────────────
@@ -194,9 +195,12 @@ function AdminPanel() {
 
   return (
     <div className="fade-up">
-      <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:48, color:'var(--text)', margin:0 }}>Admin Panel</h1>
-        {season && <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season.season_name}</p>}
+      <div style={{ marginBottom:24, display:'flex', justifyContent:'space-between', alignItems:'flex-end', flexWrap:'wrap', gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:48, color:'var(--text)', margin:0 }}>Admin Panel</h1>
+          {season && <p style={{ color:'var(--muted)', fontSize:14, marginTop:4 }}>{season.season_name}</p>}
+        </div>
+        <Link href="/admin/strategy" style={{ ...btn('gold'), textDecoration:'none' }}>🧠 Strategy Board</Link>
       </div>
 
       <Flash msg={ok} err={fail} />
@@ -239,7 +243,9 @@ function SetupTab({ season, players, session, reload, flash, boom }) {
 
   async function createSeason() {
     setBusy(true)
-    await supabase.from('seasons').update({is_active:false})
+    // supabase-js rejects an UPDATE with no filter, so target active seasons explicitly
+    const { error: deactivateError } = await supabase.from('seasons').update({ is_active:false }).eq('is_active', true)
+    if (deactivateError) { setBusy(false); boom(deactivateError.message); return }
     const { error } = await supabase.from('seasons').insert({ season_year:year, season_name:name, is_active:true })
     setBusy(false)
     if (error) { boom(error.message); return }
